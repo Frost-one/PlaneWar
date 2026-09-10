@@ -44,6 +44,8 @@ export class Enemy extends Component {
   }
 
   onBeginContact(selfCollider: Collider, otherCollider: Collider) {
+    console.log('敌机碰撞', selfCollider, otherCollider);
+    
     if (otherCollider.node.name === 'Bullet_1') {
       // 敌机被命中
       this.scheduleOnce(() => {
@@ -54,6 +56,20 @@ export class Enemy extends Component {
         bulletNode: otherCollider.node,
         enemyNode: selfCollider.node
       })
+      return
+    }
+
+    if (otherCollider.node.name === 'Player') {
+      // 敌机撞到玩家：敌机暂无生命值，撞击即同归于尽（自身销毁）；
+      // 玩家的扣血/判死规则交由 GameManager 统一处理（数据层唯一写入口）
+      eventBus.emit('player_hit', {
+        enemyNode: selfCollider.node,
+        playerNode: otherCollider.node,
+      })
+
+      this.scheduleOnce(() => {
+        selfCollider.node.destroy()
+      }, 0)
     }
   }
 }

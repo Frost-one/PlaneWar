@@ -58,5 +58,8 @@ export class EnemyManager extends Component {
     )
     const spawnY = GameConfig.BOUND_MAX_Y + 50
     enemy.setPosition(randX, spawnY)
+
+    // 敌机贴图默认朝上（与玩家同向），旋转 180° 让机头朝下，符合"敌机向下飞"的视觉
+    enemy.setRotationFromEuler(0, 0, 180)
   }
 }

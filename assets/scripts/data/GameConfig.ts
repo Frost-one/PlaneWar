@@ -14,12 +14,8 @@ export class GameConfig {
   // —— 射击相关 ——
   /** 子弹出生点相对玩家机头的 y 偏移（沿 +y 即屏幕上方，从机头再往上探出一点） */
   static readonly BULLET_SPAWN_OFFSET_Y = 30
-}
 
-export interface PlayerData {
-  id: number,
-  maxHp: number,
-  attack: number,
-  type: string,
-  speed: number,
+  // —— 碰撞相关 ——
+  /** 敌机撞到玩家时，玩家被扣除的血量 */
+  static readonly COLLIDE_DAMAGE_PLAYER = 40
 }
