@@ -9,6 +9,7 @@ import {
 } from 'cc'
 import { GameConfig } from '../data/GameConfig'
 import { eventBus } from '../core/EventBus'
+import { StateChangePayload, GameState } from '../data/GameState'
 const { ccclass, property } = _decorator
 
 @ccclass('Bullet')
@@ -16,12 +17,23 @@ export class Bullet extends Component {
   @property
   speed = 25
 
+  /** 刚体引用，用于状态切换时暂停/恢复运动 */
+  private rigidBody: RigidBody2D | null = null
+
+  /**
+   * 是否处于暂停（冻结）状态。
+   * 子弹只在 PLAYING 状态下由玩家发射，因此生成时必然处于游玩中，
+   * 默认即为 false（未暂停）；之后暂停/恢复由 state_change 事件驱动切换。
+   */
+  private isPaused = false
+
   protected onLoad(): void {
     const collider = this.getComponent(Collider2D)
     collider.on(Contact2DType.BEGIN_CONTACT, this.onBeginContact, this)
 
     // —— 移动交给刚体（物理模型）驱动，不再手动 setPosition ——
     const rigidBody = this.getComponent(RigidBody2D)
+    this.rigidBody = rigidBody
     if (rigidBody) {
       // 关闭重力，保证子弹始终沿 +Y 匀速直线上升（不被全局重力拉弯）
       rigidBody.gravityScale = 0
@@ -33,11 +45,27 @@ export class Bullet extends Component {
       // 兜底：若场景中未挂刚体，退化为手动位移，保证功能仍可用
       console.warn('[Bullet] 未找到 RigidBody2D，回退为手动位移')
     }
+
+    eventBus.on('state_change', this.onStateChange, this)
   }
 
   protected onDestroy(): void {
     const collider = this.getComponent(Collider2D)
     collider.off(Contact2DType.BEGIN_CONTACT, this.onBeginContact, this)
+    eventBus.off('state_change', this.onStateChange, this)
+  }
+
+  /** 状态切换：暂停时冻结速度，恢复时重新升高 */
+  private onStateChange({ state }: StateChangePayload): void {
+    const paused = state !== GameState.PLAYING
+    if (paused === this.isPaused) return
+    this.isPaused = paused
+
+    if (this.rigidBody) {
+      this.rigidBody.linearVelocity = paused
+        ? new Vec2(0, 0)
+        : new Vec2(0, this.speed)
+    }
   }
 
   protected update(): void {

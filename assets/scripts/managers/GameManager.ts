@@ -1,4 +1,4 @@
-import { GameState } from '../data/GameState'
+import { GameResult, GameState, StateChangePayload } from '../data/GameState'
 import { eventBus } from '../core/EventBus'
 import { playerData } from '../data/PlayerData'
 import { GameConfig } from '../data/GameConfig'
@@ -16,14 +16,32 @@ import { Component } from 'cc'
  */
 export class GameManager {
   /** 当前游戏状态，默认从主菜单进入 */
-  private currentState: GameState = GameState.MENU
+  private state: GameState = GameState.MENU
+  private result: GameResult = GameResult.NONE
 
   /**
    * 获取当前游戏状态
    * @returns 当前所处的 GameState
    */
   public getGameState(): GameState {
-    return this.currentState
+    return this.state
+  }
+
+  /**
+   * 获取当前结算结果（仅在 state === GameState.OVER 时有意义）
+   * @returns 当前 GameResult，非结束状态时为 GameResult.NONE
+   */
+  public getGameResult(): GameResult {
+    return this.result
+  }
+
+  /**
+   * 获取当前状态快照（与 state_change 事件载荷同构）。
+   * 供 UI 在启动时主动拉取一次用于初始化显隐，无需手工拼装对象。
+   * @returns 当前 { state, result }
+   */
+  public getStateSnapshot(): StateChangePayload {
+    return { state: this.state, result: this.result }
   }
 
   /**
@@ -31,12 +49,16 @@ export class GameManager {
    * 若目标状态与当前状态相同则直接忽略，避免无意义的重复广播。
    * @param state 目标状态
    */
-  public setGameState(state: GameState): void {
-    if (this.currentState === state) return
+  public setGameState(
+    state: GameState,
+    result: GameResult = GameResult.NONE,
+  ): void {
+    if (this.state === state) return
 
-    this.currentState = state
-    eventBus.emit('state_change', state)
-    console.log(`[GameManager] 状态切换 -> ${state}`)
+    this.state = state
+    this.result = result
+    eventBus.emit('state_change', { state, result })
+    console.log(`[GameManager] 状态切换 -> ${state}, 游戏结果 -> ${result}`)
   }
 
   /** 获取当前分数（委托数据层） */
@@ -44,13 +66,15 @@ export class GameManager {
     return playerData.getSnapshot().score
   }
 
-
   public initListeners(): void {
     eventBus.on('enemy_die', this.onEnemyDie, this)
     eventBus.on('player_hit', this.onPlayerHit, this)
   }
 
-  private onEnemyDie(data: { bulletNode?: Component, enemyNode?: Component }): void {
+  private onEnemyDie(data: {
+    bulletNode?: Component
+    enemyNode?: Component
+  }): void {
     console.log('敌机死亡：', data)
     playerData.addScore(10)
   }
@@ -60,11 +84,14 @@ export class GameManager {
    * 扣血量取自 GameConfig.COLLIDE_DAMAGE_PLAYER，
    * 生命归零则切到 OVER 结算状态。
    */
-  private onPlayerHit(data: { enemyNode?: Component, playerNode?: Component }): void {
+  private onPlayerHit(data: {
+    enemyNode?: Component
+    playerNode?: Component
+  }): void {
     console.log('玩家被撞：', data)
     playerData.takeDamage(GameConfig.COLLIDE_DAMAGE_PLAYER)
     if (playerData.isDead()) {
-      this.gameOver()
+      this.gameOver(GameResult.LOSE)
     }
   }
 
@@ -80,8 +107,8 @@ export class GameManager {
   /**
    * 游戏结束：玩家生命耗尽后进入结算状态
    */
-  public gameOver(): void {
-    this.setGameState(GameState.OVER)
+  public gameOver(result: GameResult): void {
+    this.setGameState(GameState.OVER, result)
   }
 
   /**

@@ -8,12 +8,15 @@ import {
   math,
 } from 'cc'
 import { GameConfig } from '../data/GameConfig'
+import { eventBus } from '../core/EventBus'
+import { StateChangePayload, GameState } from '../data/GameState'
 const { ccclass, property } = _decorator
 
 /**
  * 敌机生成管理器（挂在场景中的一个节点上）
  * - 按固定间隔在屏幕上方随机横向位置生成敌机
  * - 敌机实例取自 enemyPrefab，生成后放入 gameRoot / 玩家同层
+ * - 仅在 PLAYING 状态下生成；菜单/暂停/结算时暂停生成
  */
 @ccclass('EnemyManager')
 export class EnemyManager extends Component {
@@ -26,18 +29,38 @@ export class EnemyManager extends Component {
   spawnInterval = 1
 
   /** 累计生成计时 */
-  private _timer = 0
+  private timer = 0
+
+  /** 是否处于暂停（冻结）状态；启动时为 true（停在菜单，不生成） */
+  private isPaused = true
 
   /** 生成结果放到哪个父节点下：默认生成到本节点所在父节点（需与玩家/敌机世界同层） */
   @property(Node)
   spawnParent: Node | null = null
 
+  protected onLoad(): void {
+    eventBus.on('state_change', this.onStateChange, this)
+  }
+
+  protected onDestroy(): void {
+    eventBus.off('state_change', this.onStateChange, this)
+  }
+
+  /** 状态切换：仅 PLAYING 时生成；暂停/离开时清空计时，避免恢复后立刻“补生” */
+  private onStateChange({ state }: StateChangePayload): void {
+    this.isPaused = state !== GameState.PLAYING
+    if (this.isPaused) {
+      this.timer = 0
+    }
+  }
+
   update(deltaTime: number): void {
     if (!this.enemyPrefab) return
+    if (this.isPaused) return
 
-    this._timer += deltaTime
-    if (this._timer >= this.spawnInterval) {
-      this._timer -= this.spawnInterval
+    this.timer += deltaTime
+    if (this.timer >= this.spawnInterval) {
+      this.timer -= this.spawnInterval
       this.spawnEnemy()
     }
   }

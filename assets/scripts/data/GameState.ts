@@ -12,3 +12,19 @@ export enum GameState {
   /** 游戏结束 */
   OVER = 'OVER',
 }
+
+/** 结算结果：仅在 GameState.OVER 时有效 */
+export enum GameResult {
+  NONE = 'NONE',
+  WIN = 'WIN',
+  LOSE = 'LOSE',
+}
+
+/**
+ * state_change 事件的载荷：流程状态 + 结算结果两个正交维度。
+ * 订阅方按需解构，例如 `({ state }: StateChangePayload) => ...`。
+ */
+export interface StateChangePayload {
+  state: GameState
+  result: GameResult
+}
