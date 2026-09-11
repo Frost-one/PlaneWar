@@ -25,7 +25,7 @@ export class GameHUD extends Component {
   }
 
   onPauseBtnClick(): void {
-    gameManager.gamePause()
+    gameManager.pauseGame()
   }
 
   onPlayerDataChange(data: Readonly<IPlayerData>): void {

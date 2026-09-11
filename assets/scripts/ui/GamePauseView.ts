@@ -1,12 +1,10 @@
-import { _decorator, Button, Component, Enum, Label, Node } from 'cc'
-import { eventBus } from '../core/EventBus'
-import { playerData } from '../data/PlayerData'
+import { _decorator, Button, Component, Label } from 'cc'
 import { gameManager } from '../managers/GameManager'
-import { StateChangePayload, GameResult, GameState } from '../data/GameState'
 const { ccclass, property } = _decorator
 
 /**
  * 游戏暂停页面
+ * - 只做展示与按钮转发：点击"继续"交回 GameManager（其内部仅切状态，不重置数据）
  */
 @ccclass('GamePauseView')
 export class GamePauseView extends Component {
@@ -14,15 +12,22 @@ export class GamePauseView extends Component {
   @property(Button) resumeBtn: Button | null = null
 
   protected onLoad(): void {
-    this.titleLabel.string = '游戏暂停'
-    this.resumeBtn.node.on(Button.EventType.CLICK, this.onResumeClick, this)
+    if (this.titleLabel) {
+      this.titleLabel.string = '游戏暂停'
+    }
+    if (this.resumeBtn) {
+      this.resumeBtn.node.on(Button.EventType.CLICK, this.onResumeClick, this)
+    }
   }
 
   protected onDestroy(): void {
-    this.resumeBtn.node.off(Button.EventType.CLICK, this.onResumeClick, this)
+    if (this.resumeBtn) {
+      this.resumeBtn.node.off(Button.EventType.CLICK, this.onResumeClick, this)
+    }
   }
 
-  onResumeClick(): void {
-    gameManager.startGame()
+  /** 继续游戏：仅解冻，不重置数据（区别于 startGame） */
+  private onResumeClick(): void {
+    gameManager.resumeGame()
   }
 }

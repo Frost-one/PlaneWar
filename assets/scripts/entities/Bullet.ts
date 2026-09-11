@@ -56,8 +56,8 @@ export class Bullet extends Component {
   }
 
   /** 状态切换：暂停时冻结速度，恢复时重新升高 */
-  private onStateChange({ state }: StateChangePayload): void {
-    const paused = state !== GameState.PLAYING
+  private onStateChange({ newState }: StateChangePayload): void {
+    const paused = newState !== GameState.PLAYING
     if (paused === this.isPaused) return
     this.isPaused = paused
 

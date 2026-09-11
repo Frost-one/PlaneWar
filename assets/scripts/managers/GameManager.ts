@@ -15,8 +15,25 @@ import { Component } from 'cc'
  * 单例实例见文件底部导出的 gameManager，各模块 import 后直接使用。
  */
 export class GameManager {
+  /**
+   * 合法的状态迁移表：key = 当前状态，value = 允许迁移到的目标状态列表。
+   * 仅用于"是否放行"的守卫，不承载任何副作用；新增状态时在这里集中声明。
+   *
+   * 迁移图（线性 + 少量回边）：
+   *   MENU    → PLAYING
+   *   PLAYING → PAUSED | OVER
+   *   PAUSED  → PLAYING | MENU
+   *   OVER    → PLAYING | MENU
+   */
+  private static readonly TRANSITIONS: Record<GameState, GameState[]> = {
+    [GameState.MENU]: [GameState.PLAYING],
+    [GameState.PLAYING]: [GameState.PAUSED, GameState.OVER],
+    [GameState.PAUSED]: [GameState.PLAYING, GameState.MENU],
+    [GameState.OVER]: [GameState.PLAYING, GameState.MENU],
+  }
+
   /** 当前游戏状态，默认从主菜单进入 */
-  private state: GameState = GameState.MENU
+  private currentState: GameState = GameState.MENU
   private result: GameResult = GameResult.NONE
 
   /**
@@ -24,7 +41,7 @@ export class GameManager {
    * @returns 当前所处的 GameState
    */
   public getGameState(): GameState {
-    return this.state
+    return this.currentState
   }
 
   /**
@@ -38,27 +55,47 @@ export class GameManager {
   /**
    * 获取当前状态快照（与 state_change 事件载荷同构）。
    * 供 UI 在启动时主动拉取一次用于初始化显隐，无需手工拼装对象。
-   * @returns 当前 { state, result }
+   * 注意：启动时没有"上一个状态"，故 oldState 取当前状态本身。
+   * @returns 当前 { oldState, newState, result }
    */
   public getStateSnapshot(): StateChangePayload {
-    return { state: this.state, result: this.result }
+    return {
+      oldState: this.currentState,
+      newState: this.currentState,
+      result: this.result,
+    }
   }
 
   /**
-   * 设置新的游戏状态（唯一的改状态入口）
-   * 若目标状态与当前状态相同则直接忽略，避免无意义的重复广播。
-   * @param state 目标状态
+   * 判断从当前状态迁移到目标状态是否合法
+   * @param to 目标状态
+   * @returns 合法返回 true，否则 false
    */
-  public setGameState(
-    state: GameState,
-    result: GameResult = GameResult.NONE,
-  ): void {
-    if (this.state === state) return
+  private canTransition(to: GameState): boolean {
+    return GameManager.TRANSITIONS[this.currentState].includes(to)
+  }
 
-    this.state = state
+  /**
+   * 设置新的游戏状态（唯一的改状态入口）。
+   * - 同状态重复调用会被去重，避免无意义的重复广播
+   * - 非法迁移会被 TRANSITIONS 表拦截并告警
+   *
+   * @param nextState 目标状态
+   * @param result 结算结果，仅进入 OVER 时需要传
+   */
+  public setGameState(nextState: GameState, result: GameResult = GameResult.NONE): void {
+    if (this.currentState === nextState) return
+
+    if (!this.canTransition(nextState)) {
+      console.warn(`[GameManager] 非法状态迁移：${this.currentState} -> ${nextState}，已忽略`)
+      return
+    }
+
+    const oldState = this.currentState
+    this.currentState = nextState
     this.result = result
-    eventBus.emit('state_change', { state, result })
-    console.log(`[GameManager] 状态切换 -> ${state}, 游戏结果 -> ${result}`)
+    eventBus.emit('state_change', { oldState, newState: nextState, result })
+    console.log(`[GameManager] 状态切换：${oldState} -> ${nextState}, 游戏结果：${result}`)
   }
 
   /** 获取当前分数（委托数据层） */
@@ -71,10 +108,7 @@ export class GameManager {
     eventBus.on('player_hit', this.onPlayerHit, this)
   }
 
-  private onEnemyDie(data: {
-    bulletNode?: Component
-    enemyNode?: Component
-  }): void {
+  private onEnemyDie(data: { bulletNode?: Component, enemyNode?: Component }): void {
     console.log('敌机死亡：', data)
     playerData.addScore(10)
   }
@@ -84,20 +118,20 @@ export class GameManager {
    * 扣血量取自 GameConfig.COLLIDE_DAMAGE_PLAYER，
    * 生命归零则切到 OVER 结算状态。
    */
-  private onPlayerHit(data: {
-    enemyNode?: Component
-    playerNode?: Component
-  }): void {
+  private onPlayerHit(data: { enemyNode?: Component, playerNode?: Component }): void {
     console.log('玩家被撞：', data)
     playerData.takeDamage(GameConfig.COLLIDE_DAMAGE_PLAYER)
     if (playerData.isDead()) {
-      this.gameOver(GameResult.LOSE)
+      this.endGame(GameResult.LOSE)
     }
   }
 
+  // ==================== 状态切换函数（按语义命名，外部只调这些） ====================
+
   /**
-   * 开始游戏：由主菜单/结算界面进入游玩状态
-   * 开局先把玩家数据重置（分数、生命回到初始），再进入 PLAYING。
+   * 新开一局：由主菜单 / 结算界面进入游玩状态。
+   * 会重置玩家数据（分数、生命回到初始）。
+   * 合法来源：MENU、OVER
    */
   public startGame(): void {
     playerData.reset()
@@ -105,22 +139,34 @@ export class GameManager {
   }
 
   /**
-   * 游戏结束：玩家生命耗尽后进入结算状态
+   * 继续游戏：由暂停状态返回游玩状态。
+   * 与 startGame 的区别：**不重置任何数据**，仅解冻。
+   * 合法来源：PAUSED
    */
-  public gameOver(result: GameResult): void {
-    this.setGameState(GameState.OVER, result)
+  public resumeGame(): void {
+    this.setGameState(GameState.PLAYING)
   }
 
   /**
-   * 暂停游戏：由游玩状态进入暂停状态
-   * 暂停后可调用 startGame() 继续，或调用 backToMenu() 返回主菜单。
+   * 暂停游戏：由游玩状态进入暂停状态。
+   * 合法来源：PLAYING
    */
-  public gamePause(): void {
+  public pauseGame(): void {
     this.setGameState(GameState.PAUSED)
   }
 
   /**
-   * 回到主菜单：供"暂停界面 / 结算界面"上的"返回菜单"按钮调用
+   * 游戏结束：进入结算状态，并记录本局结果。
+   * 合法来源：PLAYING
+   * @param result 结算结果（WIN / LOSE）
+   */
+  public endGame(result: GameResult): void {
+    this.setGameState(GameState.OVER, result)
+  }
+
+  /**
+   * 回到主菜单：供"暂停界面 / 结算界面"上的"返回菜单"按钮调用。
+   * 合法来源：PAUSED、OVER
    */
   public backToMenu(): void {
     this.setGameState(GameState.MENU)

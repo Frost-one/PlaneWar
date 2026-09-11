@@ -21,10 +21,17 @@ export enum GameResult {
 }
 
 /**
- * state_change 事件的载荷：流程状态 + 结算结果两个正交维度。
- * 订阅方按需解构，例如 `({ state }: StateChangePayload) => ...`。
+ * state_change 事件的载荷：状态迁移三元组 + 结算结果。
+ * - oldState：迁移前的状态
+ * - newState：迁移后的状态
+ * - result：结算结果（仅 newState === GameState.OVER 时有意义，其余为 NONE）
+ *
+ * 订阅方按需解构，例如：
+ * - 只关心"现在是什么状态"：`({ newState }: StateChangePayload) => ...`
+ * - 需要区分"从哪来"：`({ oldState, newState }: StateChangePayload) => ...`
  */
 export interface StateChangePayload {
-  state: GameState
+  oldState: GameState
+  newState: GameState
   result: GameResult
 }

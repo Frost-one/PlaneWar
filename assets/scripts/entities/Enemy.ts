@@ -41,8 +41,8 @@ export class Enemy extends Component {
   }
 
   /** 状态切换：仅 PLAYING 时不暂停（其余状态视为冻结） */
-  private onStateChange({ state }: StateChangePayload): void {
-    this.isPaused = state !== GameState.PLAYING
+  private onStateChange({ newState }: StateChangePayload): void {
+    this.isPaused = newState !== GameState.PLAYING
   }
 
   protected update(deltaTime: number): void {

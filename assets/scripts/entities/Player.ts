@@ -58,8 +58,8 @@ export class Player extends Component {
   }
 
   /** 状态切换：仅 PLAYING 时可操作；其余状态视为暂停并清空按键 */
-  private onStateChange({ state }: StateChangePayload): void {
-    this.isPaused = state !== GameState.PLAYING
+  private onStateChange({ newState }: StateChangePayload): void {
+    this.isPaused = newState !== GameState.PLAYING
     if (this.isPaused) {
       // 清空按键状态，避免“暂停时按着方向键，恢复后立即移动”的问题
       this.keyLeft = this.keyRight = this.keyUp = this.keyDown = false

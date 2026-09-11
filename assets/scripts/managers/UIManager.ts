@@ -69,18 +69,18 @@ export class UIManager extends Component {
    * 状态变化 → 统一刷新各面板显隐。
    * 完整的"状态-可见性矩阵"集中在这里，新增面板/状态只改此处。
    */
-  private onStateChange({ state, result }: StateChangePayload): void {
+  private onStateChange({ newState }: StateChangePayload): void {
     // HUD：游玩与暂停时可见
     this.setVisible(
       this.hud,
-      state === GameState.PLAYING || state === GameState.PAUSED,
+      newState === GameState.PLAYING || newState === GameState.PAUSED,
     )
     // 主菜单：仅菜单状态
-    this.setVisible(this.menu, state === GameState.MENU)
+    this.setVisible(this.menu, newState === GameState.MENU)
     // 暂停面板：仅暂停状态
-    this.setVisible(this.gamePause, state === GameState.PAUSED)
+    this.setVisible(this.gamePause, newState === GameState.PAUSED)
     // 结算面板：仅结束状态
-    this.setVisible(this.gameResult, state === GameState.OVER)
+    this.setVisible(this.gameResult, newState === GameState.OVER)
   }
 
   private setVisible(node: Node | null, visible: boolean): void {

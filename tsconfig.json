@@ -2,8 +2,19 @@
   /* Base configuration. Do not edit this field. */
   "extends": "./temp/tsconfig.cocos.json",
 
-  /* Add your custom configuration here. */
+  /*
+   * 自定义配置：
+   * - target: ES2017 —— 让 async/await 以原生语法输出（不再降级成 __awaiter）；
+   *   ?. 与 ?? 仍会被降级，兼容性最好。
+   * - lib: ES2020 —— 类型层面开放 includes / entries / allSettled 等标准库 API。
+   *   与 target 分离，实现「输出语法保守 + 类型能力充足」。
+   * - DOM —— 保留 document / window 等 Web API 的类型声明。
+   *
+   * 注意：temp/tsconfig.cocos.json 由编辑器自动生成并覆盖，切勿直接修改。
+   */
   "compilerOptions": {
-    "strict": false
+    "strict": false,
+    "target": "ES2017",
+    "lib": ["ES2020", "DOM"]
   }
 }

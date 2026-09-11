@@ -47,8 +47,8 @@ export class EnemyManager extends Component {
   }
 
   /** 状态切换：仅 PLAYING 时生成；暂停/离开时清空计时，避免恢复后立刻“补生” */
-  private onStateChange({ state }: StateChangePayload): void {
-    this.isPaused = state !== GameState.PLAYING
+  private onStateChange({ newState }: StateChangePayload): void {
+    this.isPaused = newState !== GameState.PLAYING
     if (this.isPaused) {
       this.timer = 0
     }

@@ -40,9 +40,9 @@ export class MenuView extends Component {
   }
 
   /** 状态变化：仅在 MENU 时展示菜单面板 */
-  private onStateChange({ state }: StateChangePayload): void {
+  private onStateChange({ newState }: StateChangePayload): void {
     if (!this.panel) return
-    this.panel.active = state === GameState.MENU
+    this.panel.active = newState === GameState.MENU
   }
 
   /** 开始游戏：交回 GameManager（重置数据 + 进入 PLAYING） */

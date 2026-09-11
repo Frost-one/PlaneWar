@@ -29,14 +29,7 @@ export class GameResultView extends Component {
   /** 显示最终得分的文本 */
   @property(Label) finalScoreLabel: Label | null = null
 
-  /**
-   * 本面板对应的结算结果：胜利面板选 WIN、失败面板选 LOSE。
-   * 默认 NONE（不匹配任何结果），强制在 Inspector 里显式选择，避免漏选时静默显示错误面板。
-   */
-  @property({
-    type: Enum(GameResult),
-  })
-  result: GameResult = GameResult.NONE
+  private result: GameResult = GameResult.NONE
 
   /** "重新开始"按钮 */
   @property(Button) restartBtn: Button | null = null
@@ -72,24 +65,18 @@ export class GameResultView extends Component {
   }
 
   /**
-   * 状态变化：进入 OVER 且结算结果与本面板匹配时展示。
-   * 若未设置 result（默认 LOSE），则需在 Inspector 中按面板类型选好 WIN / LOSE。
+   * 状态变化：进入 OVER 时展示结算面板，并按结算结果自动填入标题。
    */
-  private onStateChange({ state, result }: StateChangePayload): void {
-    console.log('游戏结束：', { state, result });
-    
-    if (state === GameState.OVER) {
-      this.result = result
-      // 从数据层只读最新分数用于展示
-      if (this.finalScoreLabel) {
-        this.finalScoreLabel.string = `最终得分：${playerData.getSnapshot().score}`
-      }
-      // 标题：未在 Inspector 中指定时，按结算结果自动填入
-      if (this.titleLabel) {
-        this.titleLabel.string = GameResultView.TITLES[this.result]
-      }
-    } else {
-      this.result = GameResult.NONE
+  private onStateChange({ result }: StateChangePayload): void {
+    // 记录本局结果，供标题文案与后续逻辑使用
+    this.result = result
+    // 从数据层只读最新分数用于展示
+    if (this.finalScoreLabel) {
+      this.finalScoreLabel.string = `最终得分：${playerData.getSnapshot().score}`
+    }
+    // 标题：按结算结果自动填入（胜利 / 失败）
+    if (this.titleLabel) {
+      this.titleLabel.string = GameResultView.TITLES[this.result]
     }
   }
 

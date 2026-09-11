@@ -55,14 +55,16 @@ export class EventBus {
    */
   public on(event: string, callback: EventCallback, context?: object): void {
     const list = this.eventMap.get(event) ?? []
-    // 同一事件、同一回调不重复添加（indexOf 兼容 es5 及其以上的编译目标）
-    // 如果 event 事件没有订阅 callback 回调函数的话
-    if (list.indexOf(callback) === -1) {
+    // 同一事件、同一回调不重复添加，避免重复订阅导致回调被多次执行
+    if (!list.includes(callback)) {
       list.push(callback)
       this.eventMap.set(event, list)
 
       // 记录上下文关系，便于精确移除
-      this.contextMap.set(event, (this.contextMap.get(event) ?? new Map()).set(callback, context ?? null))
+      this.contextMap.set(
+        event,
+        (this.contextMap.get(event) ?? new Map()).set(callback, context ?? null),
+      )
     }
   }
 
