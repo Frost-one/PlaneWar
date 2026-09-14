@@ -1,23 +1,14 @@
-import {
-  _decorator,
-  Component,
-  EventKeyboard,
-  Input,
-  input,
-  instantiate,
-  KeyCode,
-  Node,
-  Prefab,
-} from 'cc'
+import { _decorator, Component, EventKeyboard, Input, input, KeyCode, } from 'cc'
 import { GameConfig } from '../data/GameConfig'
 import { eventBus } from '../core/EventBus'
 import { StateChangePayload, GameState } from '../data/GameState'
+import { BulletManager } from '../managers/BulletManager'
 const { ccclass, property } = _decorator
 
 /**
  * 玩家飞机控制组件
  * - 移动：按键状态 + 每帧综合方向 + 归一化匀速位移
- * - 攻击：按固定间隔自动发射子弹（自动连射），子弹实例取自 bulletPrefab
+ * - 攻击：按固定间隔自动发射子弹（自动连射），子弹的生成与回收交给 BulletManager
  * - 状态：仅在 PLAYING 状态下响应输入与射击；其他状态（菜单/暂停/结算）自动冻结
  */
 @ccclass('Player')
@@ -32,9 +23,12 @@ export class Player extends Component {
   private isPaused = true
 
   // —— 射击相关 ——
-  /** 子弹预制体（在场景 Player 节点 Inspector 中拖入 assets/prefabs/Bullet_1.prefab） */
-  @property(Prefab)
-  bulletPrefab: Prefab | null = null
+  /**
+   * 子弹管理器（在 Player 节点 Inspector 中，拖入挂有 BulletManager 的节点）。
+   * 子弹的生成与回收统一交给它，Player 只负责"何时发射"。
+   */
+  @property(BulletManager)
+  bulletManager: BulletManager | null = null
 
   /** 发射间隔（秒）：每隔多少秒射出一颗子弹 */
   @property
@@ -57,14 +51,30 @@ export class Player extends Component {
     eventBus.off('state_change', this.onStateChange, this)
   }
 
-  /** 状态切换：仅 PLAYING 时可操作；其余状态视为暂停并清空按键 */
-  private onStateChange({ newState }: StateChangePayload): void {
+  /**
+   * 状态切换处理。
+   *
+   * 要区分两类状态：
+   * - 按键（keyXxx）是「玩家意图的瞬时快照」，进入非游玩状态一律清空 ——
+   *   否则暂停时按着方向键、恢复后会立即朝该方向飞。
+   * - shootTimer 是「游戏世界的时间进度」，按「时间停止」语义在
+   *   PLAYING ↔ PAUSED 之间保留，恢复后接着计时；其余迁移才清零。
+   */
+  private onStateChange({ oldState, newState }: StateChangePayload): void {
     this.isPaused = newState !== GameState.PLAYING
+
+    // 清空按键：进入任何非游玩状态都执行
     if (this.isPaused) {
-      // 清空按键状态，避免“暂停时按着方向键，恢复后立即移动”的问题
       this.keyLeft = this.keyRight = this.keyUp = this.keyDown = false
-      this.shootTimer = 0
     }
+
+    // 「时间停止」区间：PLAYING ↔ PAUSED，保留射击计时进度
+    if (oldState === GameState.PAUSED || newState === GameState.PAUSED) {
+      return
+    }
+
+    // 其余迁移（新局开始 / 本局作废）：射击计时清零
+    this.shootTimer = 0
   }
 
   /** 按下：把对应方向标记为按下 */
@@ -142,7 +152,7 @@ export class Player extends Component {
 
   /** 自动连射计时：到点即从机头发射一颗子弹 */
   private updateShoot(deltaTime: number): void {
-    if (!this.bulletPrefab) return
+    if (!this.bulletManager) return
 
     this.shootTimer += deltaTime
     // 达到发射间隔则射出一颗并重置计时
@@ -152,20 +162,13 @@ export class Player extends Component {
     }
   }
 
-  /** 从玩家机头位置发射一颗子弹 */
+  /** 从玩家机头位置发射一颗子弹（生成与挂载交给 BulletManager） */
   private shoot(): void {
-    const bullet = instantiate(this.bulletPrefab)
-    if (!bullet) return
+    if (!this.bulletManager) return
 
-    // 子弹放到与玩家同级的场景节点下，使其能独立自由飞行
-    const parent = this.node.parent
-    if (parent) {
-      bullet.parent = parent
-    }
-
-    // 子弹起点放玩家机头：同一父节点下，取玩家当前位置再往上偏移一段
+    // 子弹起点放玩家机头：取玩家当前位置再往上偏移一段
     const p = this.node.position
-    bullet.setPosition(p.x, p.y + GameConfig.BULLET_SPAWN_OFFSET_Y)
+    this.bulletManager.spawnBullet(p.x, p.y + GameConfig.BULLET_SPAWN_OFFSET_Y)
   }
 
   protected update(deltaTime: number): void {

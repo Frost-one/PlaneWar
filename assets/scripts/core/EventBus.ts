@@ -5,6 +5,18 @@
 type EventCallback = (...args: unknown[]) => void
 
 /**
+ * 单条监听记录：回调 + 其 this 上下文。
+ *
+ * 判重与移除都以「回调 + 上下文」这一组合为单位。
+ * 这点很关键：多个实例共享同一个原型方法时（如 N 架敌机的 this.onStateChange），
+ * 函数引用是同一个，只有把 context 一并纳入比较，各实例才能各注册一次、互不吞并。
+ */
+interface Listener {
+  callback: EventCallback
+  context: object | null
+}
+
+/**
  * 全局事件总线（发布-订阅 / 观察者模式）
  * 用于跨组件、跨模块之间的松散耦合通信：
  * 逻辑方只管 emit 广播，UI/其他模块通过 on 订阅、off 退订，互不直接引用。
@@ -12,23 +24,20 @@ type EventCallback = (...args: unknown[]) => void
  * 采用懒加载单例模式，任何位置都能通过 `EventBus.getInstance()` 获取同一实例。
  *
  * @example
- * // 订阅（回调若需 this，建议用箭头函数属性，或显式传 context）
- * EventBus.getInstance().on('game_over', this.onGameOver)
+ * // 订阅（回调若需 this，通过第三个参数传入上下文）
+ * EventBus.getInstance().on('game_over', this.onGameOver, this)
  *
  * // 广播
  * EventBus.getInstance().emit('game_over', { score: 100 })
  *
- * // 退订（推荐用与 on 相同的函数引用，可精确移除）
- * EventBus.getInstance().off('game_over', this.onGameOver)
+ * // 退订（用与 on 相同的「回调 + 上下文」即可精确移除）
+ * EventBus.getInstance().off('game_over', this.onGameOver, this)
  */
 export class EventBus {
   private static instance: EventBus | null = null
 
-  /** 事件名 -> 回调列表 */
-  private eventMap = new Map<string, EventCallback[]>()
-
-  /** 事件名 -> (回调 -> 上下文对象)，记录绑定关系以支持按上下文精确移除 */
-  private contextMap = new Map<string, Map<EventCallback, object | null>>()
+  /** 事件名 -> 监听记录列表 */
+  private eventMap = new Map<string, Listener[]>()
 
   /** 私有构造函数，确保单例（只能通过 getInstance 获取） */
   private constructor() {}
@@ -45,27 +54,27 @@ export class EventBus {
   }
 
   /**
-   * 订阅事件监听
-   * 同一事件、同一回调只会被注册一次（自动判重，避免重复订阅导致回调被执行多次）。
+   * 订阅事件监听。
+   * 判重以「回调 + 上下文」组合为单位：同一回调绑到不同上下文时，各自都能注册一次。
    *
    * @param event 事件名称
    * @param callback 事件触发时的回调函数
-   * @param context 回调的 this 上下文（可选）。传入了才会被记录，
-   *                之后可用 off(event, callback, context) 精确移除。
+   * @param context 回调的 this 上下文（可选），广播时会以此绑定 this 调用。
+   *                多实例组件（同一原型方法多份实例）务必传入 context，
+   *                否则无法区分各实例，只有首个实例能订阅上。
    */
   public on(event: string, callback: EventCallback, context?: object): void {
     const list = this.eventMap.get(event) ?? []
-    // 同一事件、同一回调不重复添加，避免重复订阅导致回调被多次执行
-    if (!list.includes(callback)) {
-      list.push(callback)
-      this.eventMap.set(event, list)
+    const ctx = context ?? null
 
-      // 记录上下文关系，便于精确移除
-      this.contextMap.set(
-        event,
-        (this.contextMap.get(event) ?? new Map()).set(callback, context ?? null),
-      )
-    }
+    // 仅当「回调 + 上下文」都相同时，才视为重复订阅而跳过
+    const duplicated = list.some(
+      (l) => l.callback === callback && l.context === ctx,
+    )
+    if (duplicated) return
+
+    list.push({ callback, context: ctx })
+    this.eventMap.set(event, list)
   }
 
   /**
@@ -81,7 +90,7 @@ export class EventBus {
       // 先用回调本身或上下文绑定 this 后执行
       ;(callback as (...a: unknown[]) => void).apply(context ?? undefined, args)
       // 执行完毕后移除包装函数自身，实现"仅触发一次"
-      this.off(event, wrapper)
+      this.off(event, wrapper, context)
     }
     this.on(event, wrapper, context)
   }
@@ -104,26 +113,21 @@ export class EventBus {
     // 未传回调：移除该事件的所有监听
     if (!callback) {
       this.eventMap.delete(event)
-      this.contextMap.delete(event)
       return
     }
 
-    const ctxMap = this.contextMap.get(event)
-    // 从后往前遍历，避免删除元素导致索引错位
+    // 从后往前遍历，避免删除元素导致索引错位。
+    // 未传 context：移除该回调的所有绑定；传了 context：只移除「回调 + 上下文」完全匹配的那些。
     for (let i = list.length - 1; i >= 0; i--) {
-      const match = list[i] === callback
-      const ctxMatch = !context || (ctxMap?.get(callback) === context)
-      if (match && ctxMatch) {
-        list.splice(i, 1)
-        ctxMap?.delete(callback)
-        break
-      }
+      const l = list[i]
+      if (l.callback !== callback) continue
+      if (context !== undefined && l.context !== (context ?? null)) continue
+      list.splice(i, 1)
     }
 
     // 该事件已无任何监听时，清理空的映射项
     if (list.length === 0) {
       this.eventMap.delete(event)
-      this.contextMap.delete(event)
     }
   }
 
@@ -142,15 +146,14 @@ export class EventBus {
     }
     // 拷贝一份再遍历，防止回调中增删监听干扰本轮广播
     const copy = list.slice()
-    const ctxMap = this.contextMap.get(event)
-    for (const cb of copy) {
+    for (const listener of copy) {
+      const { callback, context } = listener
       try {
         // 用订阅时记录的 context 绑定 this 调用，避免丢失上下文导致回调里 this 为 undefined
-        const ctx = ctxMap?.get(cb) ?? null
-        if (ctx) {
-          ;(cb as (...a: unknown[]) => void).call(ctx, ...args)
+        if (context) {
+          ;(callback as (...a: unknown[]) => void).call(context, ...args)
         } else {
-          cb(...args)
+          callback(...args)
         }
       } catch (e) {
         // 单个回调出错不阻断其余回调
@@ -165,7 +168,6 @@ export class EventBus {
    */
   public clear(): void {
     this.eventMap.clear()
-    this.contextMap.clear()
   }
 
   /**

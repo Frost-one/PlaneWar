@@ -14,14 +14,18 @@ export class GameHUD extends Component {
 
   protected onLoad(): void {
     eventBus.on('player_data_change', this.onPlayerDataChange, this)
-    this.pauseBtn.node.on(Button.EventType.CLICK, this.onPauseBtnClick, this)
+    if (this.pauseBtn) {
+      this.pauseBtn.node.on(Button.EventType.CLICK, this.onPauseBtnClick, this)
+    }
     // 首次进入主动拉取一次快照用于显示
     this.onPlayerDataChange(playerData.getSnapshot())
   }
 
   protected onDestroy(): void {
     eventBus.off('player_data_change', this.onPlayerDataChange, this)
-    this.pauseBtn.node.on(Button.EventType.CLICK, this.onPauseBtnClick, this)
+    if (this.pauseBtn) {
+      this.pauseBtn.node.off(Button.EventType.CLICK, this.onPauseBtnClick, this)
+    }
   }
 
   onPauseBtnClick(): void {

@@ -21,28 +21,15 @@ export class MenuView extends Component {
   @property(Button) startBtn: Button | null = null
 
   protected onLoad(): void {
-    eventBus.on('state_change', this.onStateChange, this)
-
     if (this.startBtn) {
       this.startBtn.node.on(Button.EventType.CLICK, this.onStart, this)
     }
-
-    // 依据当前状态初始化显隐（避免启动时状态已是 MENU 却未收到广播）
-    this.onStateChange(gameManager.getStateSnapshot())
   }
 
   protected onDestroy(): void {
-    eventBus.off('state_change', this.onStateChange, this)
-
     if (this.startBtn) {
       this.startBtn.node.off(Button.EventType.CLICK, this.onStart, this)
     }
-  }
-
-  /** 状态变化：仅在 MENU 时展示菜单面板 */
-  private onStateChange({ newState }: StateChangePayload): void {
-    if (!this.panel) return
-    this.panel.active = newState === GameState.MENU
   }
 
   /** 开始游戏：交回 GameManager（重置数据 + 进入 PLAYING） */

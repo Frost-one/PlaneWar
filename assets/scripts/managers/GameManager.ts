@@ -111,6 +111,11 @@ export class GameManager {
   private onEnemyDie(data: { bulletNode?: Component, enemyNode?: Component }): void {
     console.log('敌机死亡：', data)
     playerData.addScore(10)
+
+    // 临时做的胜利条件
+    if (playerData.getSnapshot().score >= 50) {
+      gameManager.endGame(GameResult.WIN)
+    }
   }
 
   /**
