@@ -113,8 +113,8 @@ export class GameManager {
     playerData.addScore(10)
 
     // 临时做的胜利条件
-    if (playerData.getSnapshot().score >= 50) {
-      gameManager.endGame(GameResult.WIN)
+    if (playerData.getSnapshot().score >= 500) {
+      this.endGame(GameResult.WIN)
     }
   }
 
