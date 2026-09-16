@@ -35,6 +35,6 @@ export class GameHUD extends Component {
   onPlayerDataChange(data: Readonly<IPlayerData>): void {
     if (this.scoreLabel) this.scoreLabel.string = `分数：${data.score}`
     if (this.hpLabel) this.hpLabel.string = `生命值：${data.hp}/${data.maxHp}`
-    if (this.levelLabel) this.levelLabel.string = `等级：${data.level}`
+    if (this.levelLabel) this.levelLabel.string = `火力：${data.weaponLevel}`
   }
 }

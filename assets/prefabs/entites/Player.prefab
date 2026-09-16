@@ -153,11 +153,8 @@
     "__prefab": {
       "__id__": 7
     },
-    "bulletPrefab": {
-      "__uuid__": "bc86e455-9123-4828-99e0-61b15c02e3e3",
-      "__expectedType__": "cc.Prefab"
-    },
-    "shootInterval": 0.2,
+    "bulletManager": null,
+    "weaponId": "weapon_spread",
     "_id": ""
   },
   {
@@ -177,7 +174,7 @@
       "__id__": 9
     },
     "tag": 0,
-    "_group": 1,
+    "_group": 2,
     "_density": 1,
     "_sensor": true,
     "_friction": 0.2,

@@ -1,7 +1,7 @@
 import { GameResult, GameState, StateChangePayload } from '../data/GameState'
 import { eventBus } from '../core/EventBus'
 import { playerData } from '../data/PlayerData'
-import { GameConfig } from '../data/GameConfig'
+import { GameConfig } from '../data/config/GameConfig'
 import { Component } from 'cc'
 /**
  * 游戏全局状态管理器（单例）
@@ -108,14 +108,14 @@ export class GameManager {
     eventBus.on('player_hit', this.onPlayerHit, this)
   }
 
-  private onEnemyDie(data: { bulletNode?: Component, enemyNode?: Component }): void {
+  private onEnemyDie(data: { enemyNode?: Component, score: number }): void {
     console.log('敌机死亡：', data)
-    playerData.addScore(10)
+    playerData.addScore(data.score)
 
     // 临时做的胜利条件
-    if (playerData.getSnapshot().score >= 500) {
-      this.endGame(GameResult.WIN)
-    }
+    // if (playerData.getSnapshot().score >= 500) {
+    //   this.endGame(GameResult.WIN)
+    // }
   }
 
   /**
@@ -123,9 +123,9 @@ export class GameManager {
    * 扣血量取自 GameConfig.COLLIDE_DAMAGE_PLAYER，
    * 生命归零则切到 OVER 结算状态。
    */
-  private onPlayerHit(data: { enemyNode?: Component, playerNode?: Component }): void {
+  private onPlayerHit(data: { enemyNode?: Component, playerNode?: Component, damage: number }): void {
     console.log('玩家被撞：', data)
-    playerData.takeDamage(GameConfig.COLLIDE_DAMAGE_PLAYER)
+    playerData.takeDamage(data.damage)
     if (playerData.isDead()) {
       this.endGame(GameResult.LOSE)
     }

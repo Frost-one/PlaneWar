@@ -6,7 +6,7 @@ import {
   SpriteFrame,
   UITransform,
 } from 'cc'
-import { GameConfig } from '../data/GameConfig'
+import { GameConfig } from '../data/config/GameConfig'
 import { eventBus } from '../core/EventBus'
 import { StateChangePayload, GameState } from '../data/GameState'
 import { WFCGenerator, type WFCTile } from '../core/WFCGenerator'

@@ -2,7 +2,8 @@ import { eventBus } from '../core/EventBus'
 
 /** 玩家数据字段的形状：用于整份快照、partial 批量设置与存档 */
 export interface IPlayerData {
-  level: number
+  /** 武器等级（火力等级）：局内成长，吃 P 道具提升；死亡 / 新局清零。上限 = 当前武器的 levels.length */
+  weaponLevel: number
   hp: number
   maxHp: number
   attack: number
@@ -11,7 +12,13 @@ export interface IPlayerData {
 }
 
 export class PlayerData {
-  private level: number = 1
+  /**
+   * 武器等级（即火力等级）：局内成长（吃 P 道具提升），死亡 / 新局清零。
+   * 名字里特意带 weapon，因为它的唯一用途就是索引当前武器的弹道表：
+   *   WeaponConfig.levels[weaponLevel - 1]
+   * 上限不在这里管：上限 = 当前武器 WeaponConfig.levels.length。
+   */
+  private weaponLevel: number = 1
   private hp: number = 100
   private maxHp: number = 100
   private attack: number = 100
@@ -21,7 +28,7 @@ export class PlayerData {
   // ---------- 读：整份只读快照（UI 一次性拿全，不逐字段 getter） ----------
   public getSnapshot(): Readonly<IPlayerData> {
     return {
-      level: this.level,
+      weaponLevel: this.weaponLevel,
       hp: this.hp,
       maxHp: this.maxHp,
       attack: this.attack,
@@ -48,7 +55,7 @@ export class PlayerData {
   }
 
   public reset(): void {
-    this.level = 1
+    this.weaponLevel = 1
     this.hp = 100
     this.maxHp = 100
     this.attack = 100
@@ -64,7 +71,7 @@ export class PlayerData {
    * @example setPlayerData({ hp: 80, attack: 120 }) 同时改多个
    */
   public setPlayerData(data: Partial<IPlayerData>): void {
-    if (data.level !== undefined) this.level = data.level
+    if (data.weaponLevel !== undefined) this.weaponLevel = data.weaponLevel
     if (data.hp !== undefined) this.hp = data.hp
     if (data.maxHp !== undefined) this.maxHp = data.maxHp
     if (data.attack !== undefined) this.attack = data.attack
@@ -76,7 +83,7 @@ export class PlayerData {
   // 数据自身的序列化（用于存档）
   public toJSON(): object {
     return {
-      level: this.level,
+      weaponLevel: this.weaponLevel,
       hp: this.hp,
       maxHp: this.maxHp,
       attack: this.attack,
@@ -88,7 +95,7 @@ export class PlayerData {
   // 读取玩家存档
   public fromJSON(data: any): void {
     this.setPlayerData({
-      level: data.level ?? 1,
+      weaponLevel: data.weaponLevel ?? 1,
       hp: data.hp ?? 100,
       maxHp: data.maxHp ?? 100,
       attack: data.attack ?? 100,

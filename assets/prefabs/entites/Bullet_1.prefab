@@ -55,7 +55,7 @@
     "_lscale": {
       "__type__": "cc.Vec3",
       "x": 2,
-      "y": 2,
+      "y": 4,
       "z": 1
     },
     "_mobility": 0,
@@ -153,7 +153,6 @@
     "__prefab": {
       "__id__": 7
     },
-    "speed": 25,
     "_id": ""
   },
   {
@@ -173,7 +172,7 @@
       "__id__": 9
     },
     "tag": 0,
-    "_group": 1,
+    "_group": 4,
     "_density": 1,
     "_sensor": true,
     "_friction": 0.2,

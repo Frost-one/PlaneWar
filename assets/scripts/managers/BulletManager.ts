@@ -1,7 +1,7 @@
 import { _decorator, Component, Node, Prefab, instantiate } from 'cc'
 import { eventBus } from '../core/EventBus'
 import { StateChangePayload, GameState } from '../data/GameState'
-import { Bullet } from '../entities/Bullet'
+import { Bullet, BulletSpawnParams } from '../entities/Bullet'
 const { ccclass, property } = _decorator
 
 /**
@@ -62,12 +62,17 @@ export class BulletManager extends Component {
   }
 
   /**
-   * 生成一颗子弹并放到指定位置
+   * 生成一颗子弹并放到指定位置。
+   *
+   * 本类【刻意不认识武器】：散射有几颗、各自偏多少度，全部由 Player 算好后
+   * 通过 params 传进来。这样将来加贯穿 / 激光时，这里一行都不用改。
+   *
    * @param x 出生点 x（相对容器的局部坐标）
    * @param y 出生点 y（相对容器的局部坐标）
+   * @param params 本次飞行的参数（偏角 / 速度）
    * @returns 生成的子弹节点；预制体缺失时返回 null
    */
-  public spawnBullet(x: number, y: number): Node | null {
+  public spawnBullet(x: number, y: number, params: BulletSpawnParams): Node | null {
     if (!this.bulletPrefab) return null
 
     // 未指定容器时退回本组件所在节点
@@ -77,10 +82,11 @@ export class BulletManager extends Component {
     bullet.parent = container
     bullet.setPosition(x, y)
 
-    // 注入管理者引用：子弹自行回收时（飞出上界 / 命中敌机）
-    // 会通过它把自己从追踪列表中摘除，避免残留失效引用
+    // 注入管理者引用 + 本次飞行参数：
+    // - 管理者引用用于自行回收时把自己从追踪列表中摘除
+    // - 参数决定这颗子弹往哪飞、飞多快
     const bulletComp = bullet.getComponent(Bullet)
-    if (bulletComp) bulletComp.init(this)
+    if (bulletComp) bulletComp.init(this, params)
 
     // 纳入追踪列表，供后续统一回收
     this.bullets.push(bullet)
