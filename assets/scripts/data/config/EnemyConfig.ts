@@ -49,7 +49,7 @@ export interface EnemyConfig {
   /** 移动轨迹 */
   readonly movePattern: EnemyMovePattern
 
-  // —— 轨迹参数：按 movePattern 取用，用不到的可以省略（与 WeaponLevel 的扁平表风格一致）——
+  // —— 轨迹参数：按 movePattern 取用，用不到的可以省略（与 LaneLevel 的扁平表风格一致）——
   /**
    * `Sine` 用：横向摆动的【幅度】（px，单侧）。省略 = 0（退化为直线）。
    * 运行时：x = 出生 x + amplitude · sin(2π · frequency · t)
@@ -95,7 +95,7 @@ export interface EnemyConfig {
  * 好处：以后改武器伤害时，只要"预期火力等级"这个前提不变，
  *       就能按同一公式重算敌机血量，不会出现"改完子弹杂兵变 0.1 秒秒杀"。
  *
- * ⚠️ 以下均为占位数值，需与 WeaponConfig 联动复算。
+ * ⚠️ 以下均为占位数值，需与各机型弹道数值（见 data/ships/）联动复算。
  *
  * ⚠️ `collideDamage`（撞机伤害）不在 TTK 体系里 —— 它要和 `PlayerData.hp` 联动校准，
  *    下面是纯粹占位（PlayerData.hp 目前是 100）。

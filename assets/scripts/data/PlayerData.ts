@@ -1,7 +1,10 @@
 import { eventBus } from '../core/EventBus'
+import { DEFAULT_SHIP_ID, getShipOr } from './ships/ShipTable'
+import type { ShipConfig } from './ships/ShipConfig'
 
 /** 玩家数据字段的形状：用于整份快照、partial 批量设置与存档 */
 export interface IPlayerData {
+  shipId: string
   /** 武器等级（火力等级）：局内成长，吃 P 道具提升；死亡 / 新局清零。上限 = 当前武器的 levels.length */
   weaponLevel: number
   hp: number
@@ -12,11 +15,12 @@ export interface IPlayerData {
 }
 
 export class PlayerData {
+  private shipId: string = DEFAULT_SHIP_ID
   /**
    * 武器等级（即火力等级）：局内成长（吃 P 道具提升），死亡 / 新局清零。
-   * 名字里特意带 weapon，因为它的唯一用途就是索引当前武器的弹道表：
-   *   WeaponConfig.levels[weaponLevel - 1]
-   * 上限不在这里管：上限 = 当前武器 WeaponConfig.levels.length。
+   * 名字里特意带 weapon，因为它的唯一用途就是当"当前火力档位"传给发射器：
+   *   FireContext.fireLevel → 各发射器自己取 levels[fireLevel - 1]（越界自行 clamp）
+   * 上限不在这里管：上限 = 各发射器自己的 levels 数组长度。
    */
   private weaponLevel: number = 1
   private hp: number = 100
@@ -28,6 +32,7 @@ export class PlayerData {
   // ---------- 读：整份只读快照（UI 一次性拿全，不逐字段 getter） ----------
   public getSnapshot(): Readonly<IPlayerData> {
     return {
+      shipId: this.shipId,
       weaponLevel: this.weaponLevel,
       hp: this.hp,
       maxHp: this.maxHp,
@@ -55,12 +60,13 @@ export class PlayerData {
   }
 
   public reset(): void {
-    this.weaponLevel = 1
-    this.hp = 100
-    this.maxHp = 100
-    this.attack = 100
-    this.speed = 300
-    this.score = 0
+    this.applyShip(getShipOr(this.shipId))
+    // this.weaponLevel = 1
+    // this.hp = 100
+    // this.maxHp = 100
+    // this.attack = 100
+    // this.speed = 300
+    // this.score = 0
     // 重置同样广播，保证 UI 立即回到初始显示
     eventBus.emit('player_data_change', this.getSnapshot())
   }
@@ -71,6 +77,7 @@ export class PlayerData {
    * @example setPlayerData({ hp: 80, attack: 120 }) 同时改多个
    */
   public setPlayerData(data: Partial<IPlayerData>): void {
+    if (data.shipId !== undefined) this.shipId = data.shipId
     if (data.weaponLevel !== undefined) this.weaponLevel = data.weaponLevel
     if (data.hp !== undefined) this.hp = data.hp
     if (data.maxHp !== undefined) this.maxHp = data.maxHp
@@ -80,9 +87,20 @@ export class PlayerData {
     eventBus.emit('player_data_change', this.getSnapshot())
   }
 
+  public applyShip(cfg: ShipConfig): void {
+    this.shipId = cfg.id
+    this.maxHp = cfg.maxHp
+    this.hp = cfg.maxHp
+    this.speed = cfg.speed
+    // ⚠️ 原来这里拼成了 'play_data_change'（少个 er），
+    //    导致换机型时 HUD 和 Player 都收不到广播（只有被动读快照的选机界面会更新）
+    eventBus.emit('player_data_change', this.getSnapshot())
+  }
+
   // 数据自身的序列化（用于存档）
   public toJSON(): object {
     return {
+      shipId: this.shipId,
       weaponLevel: this.weaponLevel,
       hp: this.hp,
       maxHp: this.maxHp,
@@ -95,6 +113,7 @@ export class PlayerData {
   // 读取玩家存档
   public fromJSON(data: any): void {
     this.setPlayerData({
+      shipId: this.shipId ?? DEFAULT_SHIP_ID,
       weaponLevel: data.weaponLevel ?? 1,
       hp: data.hp ?? 100,
       maxHp: data.maxHp ?? 100,

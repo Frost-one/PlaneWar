@@ -43,7 +43,7 @@ export interface BulletSpawnParams {
 /**
  * 子弹实体组件（挂在 Bullet Prefab 上）
  * - 移动由 RigidBody2D 驱动：按【注入的偏角与速度】做匀速直线运动，不再手动 setPosition
- * - 飞出可视范围、命中敌机时，通过 despawn() 统一回收
+ * - 飞出可视范围、命中敌机时，通过 despawn() 归还到对象池
  * - 仅在 PLAYING 状态下飞行
  *
  * 职责边界：只管自身的运动与消亡，不管生成（那是 BulletManager 的事）。
@@ -52,7 +52,7 @@ export interface BulletSpawnParams {
 export class Bullet extends Component {
   /**
    * 飞行速度（px/s，设计单位）。
-   * 由生成时注入 —— 不再走 @property，避免与 WeaponConfig 构成"双源"。
+   * 由生成时注入 —— 不再走 @property，避免与发射器档位构成"双源"。
    */
   private speed = 0
   private damage = 0
@@ -81,8 +81,14 @@ export class Bullet extends Component {
   private isPaused = false
 
   /**
+   * 是否已归还对象池：防止「命中即销毁」的 scheduleOnce 回调在节点复用后重复触发 despawn。
+   * init 时复位为 false，despawn 时置 true，双重保险。
+   */
+  private released = false
+
+  /**
    * 所属的子弹管理器，由 BulletManager 在生成时注入。
-   * 用于在自身销毁前从管理器的追踪列表中摘除，避免残留失效引用。
+   * 用于在自身回收前从管理器的追踪列表中摘除，避免残留失效引用。
    */
   private manager: BulletManager | null = null
 
@@ -92,9 +98,18 @@ export class Bullet extends Component {
    * ⚠️ 与 onLoad 的先后顺序：设置 parent 会触发激活，onLoad 可能已跑过、也可能还没。
    * 所以这里不假设刚体已就绪 —— applyVelocity 内部会兜底 getComponent，
    * onLoad 末尾也会补调一次 applyVelocity，两种顺序都能正确起飞。
+   *
+   * ⚠️ 节点可能来自对象池复用：所有"上一世"的状态必须在此完整复位，否则会出现鬼影子弹。
    */
   public init(manager: BulletManager, params: BulletSpawnParams): void {
     this.manager = manager
+
+    // —— 复用自池中的节点带着「上一世」的全部状态，必须在此完整复位 ——
+    this.released = false
+    this.isPaused = false
+    // 清空上一世残留的定时器（如命中后延迟销毁的 scheduleOnce 回调）
+    this.unscheduleAllCallbacks()
+
     this.speed = params.speed
     this.angleDeg = params.angleDeg
     this.offsetX = params.offsetX
@@ -164,7 +179,7 @@ export class Bullet extends Component {
 
   /**
    * 状态切换：仅 PLAYING 时飞行（其余状态冻结）。
-   * 「时间停止」：冻结时线速度置零，刚体位置原地保留，恢复后从原处继续。
+   * 「时间停止」：冻结时线速度置零，刚体位置原地保留，恢复后从原处继续飞。
    */
   private onStateChange({ newState }: StateChangePayload): void {
     const paused = newState !== GameState.PLAYING
@@ -194,13 +209,16 @@ export class Bullet extends Component {
   }
 
   /**
-   * 统一的自我回收入口。
-   * 先通知管理器将自身移出追踪列表，再销毁节点 ——
-   * 避免管理器列表里残留已销毁的失效引用。
+   * 统一的归还对象池入口。
+   * 交给管理器把自身从追踪列表摘除，并按 prefab 还回对应的池（管理器内部决定复用或销毁）。
+   * released 标志防止「命中即销毁」的延迟回调在复用后重复触发。
    */
   private despawn(): void {
-    this.manager?.unregisterBullet(this.node)
-    if (this.node.isValid) this.node.destroy()
+    // 防止同一颗子弹在「复用后」被上一世的延迟销毁回调再次回收
+    if (this.released) return
+    this.released = true
+    // 交给管理器归还到对象池（管理器会把它从追踪列表摘除 + 按 prefab 回池）
+    this.manager?.releaseBullet(this.node)
   }
 
   onBeginContact(selfCollider2D: Collider2D, otherCollider: Collider2D) {

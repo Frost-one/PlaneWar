@@ -1,7 +1,8 @@
-import { _decorator, Collider2D, Component, Contact2DType } from 'cc'
+import { _decorator, Collider2D, Component, Contact2DType, Prefab } from 'cc'
 import { GameConfig } from '../data/config/GameConfig'
 import { eventBus } from '../core/EventBus'
 import { StateChangePayload, GameState } from '../data/GameState'
+import { poolManager } from '../core/PoolManager'
 import { EnemyMovePattern } from '../data/config/EnemyConfig'
 // 仅用于类型标注，编译后不产生真实 import，避免与 EnemyManager 形成循环依赖
 import type { EnemyManager } from '../managers/EnemyManager'
@@ -13,7 +14,7 @@ const { ccclass, property } = _decorator
 /**
  * 敌机实体组件（挂在 Enemy Prefab 上）
  * - 每帧向下飞行（朝屏幕下方移动，与玩家子弹向上相反）
- * - 飞出玩家可视区域下界、被击中、或撞到玩家时，通过 despawn() 统一销毁
+ * - 飞出玩家可视区域下界、被击中、或撞到玩家时，通过 despawn() 统一回收（归还对象池）
  * - 仅在 PLAYING 状态下飞行
  *
  * 职责边界：只管自身的移动与消亡，不管生成（那是 EnemyManager 的事）。
@@ -60,21 +61,36 @@ export class Enemy extends Component {
 
   /**
    * 所属的敌机管理器，由 EnemyManager 在生成时注入。
-   * 用于在自身销毁前从管理器的追踪列表中摘除，避免残留失效引用。
+   * 用于在自身回收时通过它摘除追踪记录并归还对象池。
    */
   private manager: EnemyManager | null = null
+
+  /** 本敌机所属的预制体，由 init 注入；回收时靠它把节点还回正确的池 */
+  private prefab: Prefab | null = null
+
+  /** 是否已归还对象池：防止「出界销毁 / 被击杀 / 撞机」等多条路径重复回收 */
+  private released = false
 
   /**
    * 敌机的初始化入口，由 EnemyManager 在生成后立即调用。
    *
    * 职责：
-   * - 注入管理者引用（销毁时用于摘除追踪记录）
-   * - 应用运行时才确定的属性（后续扩展点：血量、等级、波次加成等）
+   * - 注入管理者引用（回收时用于摘除追踪记录 + 归还对象池）
+   * - 注入所属 prefab（回收时用于选池）
+   * - 应用运行时才确定的属性（数值 / 轨迹 / 复位标志）
    *
    * @param manager 生成该敌机的敌机管理器
+   * @param cfg     该敌机的配置
+   * @param prefab  该敌机对应的预制体
    */
-  public init(manager: EnemyManager, cfg: EnemyConfig): void {
+  public init(manager: EnemyManager, cfg: EnemyConfig, prefab: Prefab): void {
     this.manager = manager
+    this.prefab = prefab
+
+    // 对象池复用：先清掉「上一世」可能残留的待执行定时器（如延迟 despawn）
+    this.unscheduleAllCallbacks()
+    // 复位回收标志：否则复用后首帧若再次触发 despawn 会被旧标志挡掉
+    this.released = false
 
     // 1. 数值
     this.speed = cfg.speed
@@ -212,13 +228,14 @@ export class Enemy extends Component {
   }
 
   /**
-   * 统一的自我销毁入口。
-   * 先通知管理器将自身移出追踪列表，再销毁节点 ——
-   * 避免管理器列表里残留已销毁的失效引用。
+   * 统一的自我回收入口。
+   * 用 released 标志防重入（出界 / 被击杀 / 撞机 可能多条路径同时触发），
+   * 再通知管理器把自身从追踪列表摘除，并按 prefab 归还对象池复用。
    */
   private despawn(): void {
-    this.manager?.unregisterEnemy(this.node)
-    if (this.node.isValid) this.node.destroy()
+    if (this.released) return
+    this.released = true
+    this.manager?.releaseEnemy(this.node, this.prefab!)
   }
 
   onBeginContact(selfCollider: Collider2D, otherCollider: Collider2D) {
@@ -230,7 +247,7 @@ export class Enemy extends Component {
       }
       return
     }
-    
+
     // 2. 撞到的是玩家
     if (otherCollider.group === PHYSICS_GROUP.PLAYER) {
       // 撞到玩家，但是我期望敌机受到等同玩家的飞机的攻击的伤害
@@ -241,6 +258,7 @@ export class Enemy extends Component {
         damage: this.collideDamage
       })
 
+      // 在碰撞回调中回收节点不安全，推迟到下一帧（见对象池设计说明）
       this.scheduleOnce(() => {
         this.despawn()
       }, 0)
@@ -257,6 +275,7 @@ export class Enemy extends Component {
         score: this.score
       })
 
+      // 通过回调触发（命中击杀在碰撞回调里，下一帧再回收，避免物理回调中改节点）
       this.scheduleOnce(() => {
         this.despawn()
       }, 0)

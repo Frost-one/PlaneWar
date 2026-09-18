@@ -3,13 +3,13 @@ import {
   Component,
   Node,
   Prefab,
-  instantiate,
   math,
 } from 'cc'
 import { GameConfig } from '../data/config/GameConfig'
 import { eventBus } from '../core/EventBus'
 import { StateChangePayload, GameState } from '../data/GameState'
 import { Enemy } from '../entities/Enemy'
+import { poolManager } from '../core/PoolManager'
 import { ENEMY_CONFIGS, EnemyMovePattern } from '../data/config/EnemyConfig'
 const { ccclass, property } = _decorator
 
@@ -19,7 +19,7 @@ const { ccclass, property } = _decorator
  * - 敌机统一挂到 enemyContainer（专用容器 Enemies）下，便于整体清场
  * - 仅在 PLAYING 状态下生成；菜单/暂停/结算时暂停生成
  *
- * 职责边界：本类只负责【生成】与【销毁/回收】敌机，
+ * 职责边界：本类只负责【生成】与【回收】敌机（节点来自对象池 poolManager，按 prefab 复用），
  * 不干涉敌机自身的移动、碰撞等行为（那是 Enemy 组件的事）。
  */
 @ccclass('EnemyManager')
@@ -50,8 +50,7 @@ export class EnemyManager extends Component {
 
   /**
    * 当前存活的敌机列表。
-   * 用于快速遍历与统一回收；配合 isValid 判断可容忍"敌机自行销毁"造成的失效引用。
-   * 后续接入对象池时，这里可直接改为持有可复用的敌机实例。
+   * 仅用于追踪与统一回收；实际节点来自 poolManager（按 prefab 复用），不再每次 instantiate。
    */
   private enemyList: Node[] = []
 
@@ -152,12 +151,9 @@ export class EnemyManager extends Component {
       return
     }
 
-    // ③ 根据预制体创建敌机结点
-    const enemy = instantiate(prefab)
+    // ③ 根据预制体【从对象池借出】敌机结点（池空才新建），统一挂到容器下
+    const enemy = poolManager.acquire(prefab, this.enemyContainer ?? this.node)
     if (!enemy) return
-
-    // 挂到专用容器下（便于整体清场）；未指定容器时退回本组件所在节点
-    enemy.parent = this.enemyContainer ?? this.node
 
     // 出生位置：x 随机在玩家横向范围内，y 固定在屏幕上方界外（从屏外滑入）
     //
@@ -170,40 +166,41 @@ export class EnemyManager extends Component {
     const spawnY = GameConfig.BOUND_MAX_Y + 50
     enemy.setPosition(spawnX, spawnY)
 
-    // 初始化敌机：注入管理者引用（敌机自行销毁时会通过它摘除追踪记录），
+    // 初始化敌机：注入管理者引用 + 所属 prefab（回收时靠它还回正确的池），
     // 并留出运行时属性初始化的扩展点
     const enemyComp = enemy.getComponent(Enemy)
-    if (enemyComp) enemyComp.init(this, cfg)
+    if (enemyComp) enemyComp.init(this, cfg, prefab)
     // 纳入追踪列表，供后续统一回收
     this.enemyList.push(enemy)
   }
 
-  // ==================== 销毁 / 回收 ====================
+  // ==================== 回收 ====================
 
   /**
-   * 统一回收接口：销毁一架敌机并将其移出追踪列表。
-   * 敌机自行销毁（如飞出屏幕、被击中）时也应走这里，避免残留失效引用。
-   * 后续接入对象池时，只需把 destroy() 换成回池操作。
+   * 统一回收接口：把一架敌机归还到对象池（而非销毁），供后续复用。
+   * 先把它从追踪列表摘除，再按它所属的 prefab 还回对应的池。
    *
-   * @param enemy 待回收的敌机节点
+   * @param enemy  待回收的敌机节点
+   * @param prefab 该敌机所属的预制体（决定回哪个池，由 Enemy 在 init 时记下）
    */
-  public destroyEnemy(enemy: Node): void {
+  public releaseEnemy(enemy: Node, prefab: Prefab): void {
     // 先从追踪列表摘除（找不到也无妨，说明已被回收过）
     this.unregisterEnemy(enemy)
-
-    // isValid 判断：敌机可能已被自身 destroy，避免重复销毁报错
-    if (enemy.isValid) enemy.destroy()
+    // 归还到对象池：poolManager 按 prefab 找到对应的 ObjectPool 并 put 回去
+    poolManager.release(prefab, enemy)
   }
 
   /**
    * 清空全部敌机。
    * 以追踪列表为准（而非遍历容器子节点），因此不依赖容器的子节点构成。
+   * 全部归还到对象池复用，不销毁。
    */
   private clearEnemies(): void {
-    // 拷贝一份再遍历：destroyEnemy 会修改原数组
+    // 拷贝一份再遍历：despawn 会修改原数组
     const list = this.enemyList.slice()
     for (const enemy of list) {
-      this.destroyEnemy(enemy)
+      // 走 Enemy.despawn()：它持有自己所属的 prefab，能正确还回对应的池
+      enemy.getComponent(Enemy)?.despawn()
     }
     // 保险：清理可能遗漏的无效引用
     this.enemyList.length = 0
@@ -211,7 +208,7 @@ export class EnemyManager extends Component {
 
   /**
    * 从追踪列表摘除某架敌机（不销毁节点）。
-   * 供 Enemy 脚本在自行销毁前调用，避免列表残留失效引用。
+   * 供 Enemy 脚本在自行回收前调用，避免列表残留失效引用。
    *
    * @param enemy 要摘除的敌机节点
    */
