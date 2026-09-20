@@ -60,6 +60,9 @@ export class LaneEmitter implements Emitter {
   /** 距离下一次开火还剩多少秒；**跨档位共享**，所以换档不会重置它 */
   private cooldown = 0
 
+  /** "没有子弹 prefab"只警告一次的标志位（避免每帧刷屏） */
+  private warnedNoPrefab = false
+
   constructor(id: string, levels: readonly LaneLevel[], minLevel = 1) {
     this.id = id
     this.levels = levels
@@ -72,6 +75,18 @@ export class LaneEmitter implements Emitter {
 
     const bullets: BulletManager | null = ctx.bullets
     if (!bullets) return
+
+    // 实体弹机型必须带 prefab；激光机型走的是 BeamEmitter，根本不会进这里。
+    // 只警告一次：这里是每帧调用，每帧打日志会把控制台刷爆。
+    if (!ctx.bulletPrefab) {
+      if (!this.warnedNoPrefab) {
+        this.warnedNoPrefab = true
+        console.warn(
+          `[LaneEmitter] ${this.id} 没有子弹 prefab，无法开火（检查该机型 assetPaths.bullet 是否配置且已放进 resources）`,
+        )
+      }
+      return
+    }
 
     const level = this.levelOf(ctx.fireLevel)
     if (!level) return
@@ -96,13 +111,18 @@ export class LaneEmitter implements Emitter {
       //    否则 count=3 且 spreadAngle=0（三条平行弹道）会被错当成单发
       const t = count <= 1 ? 0 : i / (count - 1) - 0.5
 
-      bullets.spawnBullet(ctx.x, ctx.y, {
-        angleDeg: t * totalAngle,
-        offsetX: t * totalWidth,
-        speed: level.speed,
-        damage,
-        pierce: level.pierce ?? 0,
-      })
+      bullets.spawnBullet(
+        ctx.x,
+        ctx.y,
+        {
+          angleDeg: t * totalAngle,
+          offsetX: t * totalWidth,
+          speed: level.speed,
+          damage,
+          pierce: level.pierce ?? 0,
+        },
+        ctx.bulletPrefab,
+      )
     }
   }
 

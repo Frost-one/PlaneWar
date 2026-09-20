@@ -111,16 +111,36 @@ export class Enemy extends Component {
     this.isPaused = false                // ← 若在暂停中被回收，取出后会一直冻结
   }
 
-  protected onLoad(): void {
+  /**
+   * 订阅与碰撞监听跟随【激活状态】，与 onDisable 严格对称。
+   *
+   * 为什么不放 onLoad：敌机走对象池，回收时只是【停用】并不销毁。
+   * 放在 onLoad 会让池里"休眠的敌机"继续收 state_change 广播、继续触发碰撞回调。
+   * 首次实例化时 onLoad 早于 onEnable；复用时只走 onEnable —— 两种路径都能订阅上。
+   */
+  protected onEnable(): void {
     const collider = this.getComponent(Collider2D)
-    collider.on(Contact2DType.BEGIN_CONTACT, this.onBeginContact, this)
-
+    if (collider) {
+      collider.on(Contact2DType.BEGIN_CONTACT, this.onBeginContact, this)
+    }
     eventBus.on('state_change', this.onStateChange, this)
   }
 
-  protected onDestroy(): void {
+  protected onDisable(): void {
     const collider = this.getComponent(Collider2D)
-    collider.off(Contact2DType.BEGIN_CONTACT, this.onBeginContact, this)
+    if (collider) {
+      collider.off(Contact2DType.BEGIN_CONTACT, this.onBeginContact, this)
+    }
+    eventBus.off('state_change', this.onStateChange, this)
+  }
+
+  protected onDestroy(): void {
+    // 兜底注销：生命周期规范要求 onDestroy 必须完成"从事件总线注销"，
+    // 不依赖 onDisable 是否被调用过。off 是幂等的，重复调用无害。
+    const collider = this.getComponent(Collider2D)
+    if (collider) {
+      collider.off(Contact2DType.BEGIN_CONTACT, this.onBeginContact, this)
+    }
     eventBus.off('state_change', this.onStateChange, this)
   }
 
@@ -229,10 +249,22 @@ export class Enemy extends Component {
 
   /**
    * 统一的自我回收入口。
-   * 用 released 标志防重入（出界 / 被击杀 / 撞机 可能多条路径同时触发），
+   * 用 released 标志防重入（出界 / 被击杀 / 撞机 / 管理器清场 可能多条路径同时触发），
    * 再通知管理器把自身从追踪列表摘除，并按 prefab 归还对象池复用。
+   *
+   * 【为什么是 public，而不是 private】
+   *   调用方有两类：
+   *     ① 自己（出界 / 被击杀 / 撞机 —— 都在本类内部）
+   *     ② EnemyManager.clearEnemies()（清场时批量回收）
+   *   ② 必须走这个入口，不能自己去调 releaseEnemy —— 因为**只有 Enemy 自己
+   *   知道它的 prefab 是什么**（prefab 由 init 注入、存在私有字段里），
+   *   而 releaseEnemy 必须拿到 prefab 才能还回正确的池。
+   *   所以它不是"内部实现细节"，而是**对外承诺的回收协议**。
+   *
+   * ⚠️ 不要改成 public 之后又让 Manager 去碰 released / prefab：
+   *    防重入标志留在本类，外部只管"叫它回收"，不关心它怎么回收。
    */
-  private despawn(): void {
+  public despawn(): void {
     if (this.released) return
     this.released = true
     this.manager?.releaseEnemy(this.node, this.prefab!)

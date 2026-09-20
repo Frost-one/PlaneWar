@@ -118,13 +118,10 @@
       "b": 255,
       "a": 255
     },
-    "_spriteFrame": {
-      "__uuid__": "d3069ba8-0532-4b73-9cd1-7d370304563e@f9941",
-      "__expectedType__": "cc.SpriteFrame"
-    },
+    "_spriteFrame": null,
     "_type": 0,
     "_fillType": 0,
-    "_sizeMode": 1,
+    "_sizeMode": 0,
     "_fillCenter": {
       "__type__": "cc.Vec2",
       "x": 0,
@@ -154,7 +151,8 @@
       "__id__": 7
     },
     "bulletManager": null,
-    "weaponId": "weapon_spread",
+    "beamLayer": null,
+    "shipSprite": null,
     "_id": ""
   },
   {

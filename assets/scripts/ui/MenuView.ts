@@ -20,13 +20,24 @@ export class MenuView extends Component {
   /** "开始游戏"按钮 */
   @property(Button) startBtn: Button | null = null
 
-  protected onLoad(): void {
+  /**
+   * 按钮监听跟随【激活状态】，与 onDisable 严格对称。
+   * 菜单只在 MENU 状态显示，隐藏期间不该继续响应点击。
+   */
+  protected onEnable(): void {
     if (this.startBtn) {
       this.startBtn.node.on(Button.EventType.CLICK, this.onStart, this)
     }
   }
 
+  protected onDisable(): void {
+    if (this.startBtn) {
+      this.startBtn.node.off(Button.EventType.CLICK, this.onStart, this)
+    }
+  }
+
   protected onDestroy(): void {
+    // 兜底注销（off 幂等），不依赖 onDisable 是否被调用过
     if (this.startBtn) {
       this.startBtn.node.off(Button.EventType.CLICK, this.onStart, this)
     }

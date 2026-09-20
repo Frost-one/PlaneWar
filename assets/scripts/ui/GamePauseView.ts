@@ -11,16 +11,31 @@ export class GamePauseView extends Component {
   @property(Label) titleLabel: Label | null = null
   @property(Button) resumeBtn: Button | null = null
 
+  /** 同步、无依赖的初始化：静态文案只需设置一次 */
   protected onLoad(): void {
     if (this.titleLabel) {
       this.titleLabel.string = '游戏暂停'
     }
+  }
+
+  /**
+   * 按钮监听跟随【激活状态】，与 onDisable 严格对称。
+   * 暂停面板只在 PAUSED 状态显示，隐藏期间不该继续响应点击。
+   */
+  protected onEnable(): void {
     if (this.resumeBtn) {
       this.resumeBtn.node.on(Button.EventType.CLICK, this.onResumeClick, this)
     }
   }
 
+  protected onDisable(): void {
+    if (this.resumeBtn) {
+      this.resumeBtn.node.off(Button.EventType.CLICK, this.onResumeClick, this)
+    }
+  }
+
   protected onDestroy(): void {
+    // 兜底注销（off 幂等），不依赖 onDisable 是否被调用过
     if (this.resumeBtn) {
       this.resumeBtn.node.off(Button.EventType.CLICK, this.onResumeClick, this)
     }

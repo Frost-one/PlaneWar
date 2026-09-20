@@ -25,6 +25,20 @@ export const SHIP_GREEN: ShipConfig = {
   maxHp: 160,
   speed: 360,
   fireStyleName: '贯穿',
-  spriteIndex: 1,
   emitters: [new LaneEmitter('main', LEVELS)],
+
+  // 资源：与数值同处一个文件
+  assetPaths: {
+    // ⚠️ 这里是【占位路径】：苍岩的三张外观图还没放进 resources/，
+    //    加载会失败但不会卡住启动（第 0 档缺图 → 整架跳过 + 打 error）。
+    //    补图时只需把文件放进去、路径对上，代码一行都不用改。
+    sprites: [
+      'ships/ship_green/sprite_level_1/spriteFrame',
+      'ships/ship_green/sprite_level_2/spriteFrame',
+      'ships/ship_green/sprite_level_3/spriteFrame',
+    ],
+    // 与赤焰共用同一份子弹 prefab
+    bullet: 'ships/ship_green/Bullet_1',
+    // shoot: 'ships/ship_green/shoot',
+  },
 }

@@ -12,16 +12,28 @@ export class GameHUD extends Component {
   @property(Label) levelLabel: Label | null = null
   @property(Button) pauseBtn: Button | null = null
 
-  protected onLoad(): void {
+  /**
+   * 订阅与按钮监听跟随【激活状态】，与 onDisable 严格对称。
+   * HUD 由 UIManager 切换显隐，隐藏期间不该继续收广播、也不需要刷新文本。
+   */
+  protected onEnable(): void {
     eventBus.on('player_data_change', this.onPlayerDataChange, this)
     if (this.pauseBtn) {
       this.pauseBtn.node.on(Button.EventType.CLICK, this.onPauseBtnClick, this)
     }
-    // 首次进入主动拉取一次快照用于显示
+    // 激活时主动拉一次快照：可能已错过了之前的广播
     this.onPlayerDataChange(playerData.getSnapshot())
   }
 
+  protected onDisable(): void {
+    eventBus.off('player_data_change', this.onPlayerDataChange, this)
+    if (this.pauseBtn) {
+      this.pauseBtn.node.off(Button.EventType.CLICK, this.onPauseBtnClick, this)
+    }
+  }
+
   protected onDestroy(): void {
+    // 兜底注销（off 幂等），不依赖 onDisable 是否被调用过
     eventBus.off('player_data_change', this.onPlayerDataChange, this)
     if (this.pauseBtn) {
       this.pauseBtn.node.off(Button.EventType.CLICK, this.onPauseBtnClick, this)

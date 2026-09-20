@@ -32,10 +32,23 @@ export class UIManager extends Component {
   private hud: Node | null = null
   private gameResult: Node | null = null
 
+  /**
+   * 只做同步、无依赖的初始化。
+   *
+   * 【为什么订阅放在 onLoad 而不是 onEnable】
+   *   本组件挂在常驻节点上、全程不失活，用 onEnable/onDisable 配对没有实际收益。
+   *   生命周期规范允许这种例外，但要求在注释中写明原因 —— 原因就是上面这句。
+   */
   protected onLoad(): void {
     eventBus.on('state_change', this.onStateChange, this)
+  }
 
-    // 启动时一次性实例化所有面板（默认隐藏），避免运行中加载造成卡顿
+  /**
+   * 实例化面板与初始显隐放在 start：它们要读 gameManager 的状态快照，
+   * 属于"依赖他人状态的初始化"，不能放进 onLoad。
+   */
+  protected start(): void {
+    // 一次性实例化所有面板（默认隐藏），避免运行中加载造成卡顿
     this.menu = this.createPanel(this.menuPrefab, this.menuLayer)
     this.gamePause = this.createPanel(this.gamePausePrefab, this.gamePausePanel)
     this.hud = this.createPanel(this.HUDPrefab, this.HUDLayer)

@@ -37,7 +37,12 @@ export class GameResultView extends Component {
   /** "返回菜单"按钮 */
   @property(Button) menuBtn: Button | null = null
 
-  protected onLoad(): void {
+  /**
+   * 订阅与按钮监听跟随【激活状态】，与 onDisable 严格对称。
+   *
+   * 结算面板只在 OVER 状态显示，其余时间处于隐藏状态 —— 隐藏期间不该继续收广播。
+   */
+  protected onEnable(): void {
     eventBus.on('state_change', this.onStateChange, this)
 
     // 按钮点击：统一转发给 GameManager，由它切换状态
@@ -49,7 +54,23 @@ export class GameResultView extends Component {
     }
   }
 
+  protected onDisable(): void {
+    eventBus.off('state_change', this.onStateChange, this)
+
+    if (this.restartBtn) {
+      this.restartBtn.node.off(
+        Button.EventType.CLICK,
+        this.onRestartClick,
+        this,
+      )
+    }
+    if (this.menuBtn) {
+      this.menuBtn.node.off(Button.EventType.CLICK, this.onMenuClick, this)
+    }
+  }
+
   protected onDestroy(): void {
+    // 兜底注销（off 幂等），不依赖 onDisable 是否被调用过
     eventBus.off('state_change', this.onStateChange, this)
 
     if (this.restartBtn) {

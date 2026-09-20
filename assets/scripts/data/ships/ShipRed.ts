@@ -27,7 +27,21 @@ export const SHIP_RED: ShipConfig = {
   maxHp: 120,
   speed: 420,
   fireStyleName: '散射',
-  spriteIndex: 0,
+
+  // 资源：与数值同处一个文件，改这架飞机只看这里
+  assetPaths: {
+    // 外观档：数组下标 = 外观档号，与上面的 LEVELS 【同索引但不必等长】——
+    // 5 档火力只配 3 张图，"哪档用哪张"交给 ShipRegistry.STAGE_OF_LEVEL 决定。
+    // ⚠️ 取 SpriteFrame 必须带 `/spriteFrame` 子资源后缀，漏了会加载失败。
+    sprites: [
+      'ships/ship_red/sprite_level_1/spriteFrame',
+      'ships/ship_red/sprite_level_2/spriteFrame',
+      'ships/ship_red/sprite_level_3/spriteFrame',
+    ],
+    // 与苍岩共用同一份子弹 prefab：结构完全一样，复制三份只会拆散对象池
+    bullet: 'ships/ship_red/Bullet_1',
+    // shoot: 'ships/ship_red/shoot',
+  },
 
   /**
    * 装配：一个 LaneEmitter 吃下全部 5 档（扇形铺开：spreadAngle > 0、laneWidth = 0）

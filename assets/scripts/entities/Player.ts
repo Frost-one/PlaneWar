@@ -6,13 +6,14 @@ import {
   input,
   KeyCode,
   Node,
+  Sprite,
 } from 'cc'
 import { GameConfig } from '../data/config/GameConfig'
 import { eventBus } from '../core/EventBus'
 import { StateChangePayload, GameState } from '../data/GameState'
 import { BulletManager } from '../managers/BulletManager'
 import { IPlayerData, playerData } from '../data/PlayerData'
-import { getShipOr } from '../data/ships/ShipTable'
+import { getShipOr, getShipPackageOr, getShipSprite, stageOfLevel } from '../data/ships/ShipRegistry'
 import type { ShipConfig } from '../data/ships/ShipConfig'
 import type { Emitter, FireContext } from './emitters/Emitter'
 import { NO_MODS } from './emitters/Emitter'
@@ -58,6 +59,16 @@ export class Player extends Component {
   @property(Node)
   beamLayer: Node | null = null
 
+  /**
+   * 机身 Sprite（换机型 / 升火力换外观时改它的 spriteFrame）。
+   *
+   * ⚠️ **没拖也能跑**：为 null 时整条换图链路静默跳过，飞机保持 prefab 里的原图。
+   *    这是刻意的 —— 换图属于表现增强，不该因为漏拖一个引用就崩。
+   *    但正因如此，忘了拖**不会报错**，只是"升级后外形没变"，排查时先看这里。
+   */
+  @property(Sprite)
+  shipSprite: Sprite | null = null
+
   /** 当前机型配置；缓存下来，避免每帧查表 */
   private ship: ShipConfig = getShipOr(playerData.getSnapshot().shipId)
 
@@ -67,22 +78,55 @@ export class Player extends Component {
   /** 当前装配来自哪个机型；**只有换机型才重建装配**，换火力等级不重建 */
   private loadoutKey = ''
 
-  protected onLoad(): void {
+  /**
+   * 输入监听与事件订阅跟随【激活状态】，与 onDisable 严格对称。
+   *
+   * 为什么不放 onLoad：非游玩状态下若 Player 被停用，输入与广播都不该继续生效；
+   * 放 onLoad 会让停用的组件继续收事件。
+   */
+  protected onEnable(): void {
     input.on(Input.EventType.KEY_DOWN, this.onKeyDown, this)
     input.on(Input.EventType.KEY_UP, this.onKeyUp, this)
 
     eventBus.on('state_change', this.onStateChange, this)
     eventBus.on('player_data_change', this.onPlayerDataChange, this)
-
-    // 首次进入主动拉一次：把当前机型的装配装进控制器
-    this.applyLoadout(playerData.getSnapshot())
+    // 机身贴图是异步加载的，可能在 Player 启动之后才就绪 —— 靠这条广播补一次外观
+    eventBus.on('ship_assets_ready', this.onShipAssetsReady, this)
   }
 
-  protected onDestroy(): void {
+  /**
+   * 依赖他人状态的初始化放 start：装配与外观都要读 playerData 快照。
+   * （onLoad 只做同步、无依赖的初始化，本组件没有这类内容，故不写 onLoad。）
+   */
+  protected start(): void {
+    const snap = playerData.getSnapshot()
+    this.applyLoadout(snap)
+    this.applyAppearance(snap)
+  }
+
+  protected onDisable(): void {
     input.off(Input.EventType.KEY_DOWN, this.onKeyDown, this)
     input.off(Input.EventType.KEY_UP, this.onKeyUp, this)
     eventBus.off('state_change', this.onStateChange, this)
-    eventBus.off('player_data_change', this.onPlayerDataChange, this) // ← 原来漏了
+    eventBus.off('player_data_change', this.onPlayerDataChange, this)
+    eventBus.off('ship_assets_ready', this.onShipAssetsReady, this)
+  }
+
+  protected onDestroy(): void {
+    // 兜底注销（off 幂等）：生命周期规范要求 onDestroy 完成"从全局注销"，
+    // 不依赖 onDisable 是否被调用过。
+    input.off(Input.EventType.KEY_DOWN, this.onKeyDown, this)
+    input.off(Input.EventType.KEY_UP, this.onKeyUp, this)
+    eventBus.off('state_change', this.onStateChange, this)
+    eventBus.off('player_data_change', this.onPlayerDataChange, this)
+    eventBus.off('ship_assets_ready', this.onShipAssetsReady, this)
+  }
+
+  /** 资源异步加载完成 → 补刷新一次外观（贴图在启动阶段是异步加载的） */
+  private onShipAssetsReady(): void {
+    // 异步广播到达时节点可能已销毁 —— 先确认还活着
+    if (!this.node?.isValid) return
+    this.applyAppearance(playerData.getSnapshot())
   }
 
   /**
@@ -109,11 +153,12 @@ export class Player extends Component {
     this.resetEmitters()
   }
 
-  /** 玩家数据变化：机型或火力等级变了就重装发射器 */
+  /** 玩家数据变化：机型或火力等级变了就重装发射器 / 换外观 */
   private onPlayerDataChange(data: Readonly<IPlayerData>): void {
     const cfg = getShipOr(data.shipId)
     if (cfg.id !== this.ship.id) this.ship = cfg
     this.applyLoadout(data)
+    this.applyAppearance(data)
   }
 
   /**
@@ -133,11 +178,47 @@ export class Player extends Component {
     for (const e of this.emitters) e.reset()
     this.emitters = cfg.emitters
     this.loadoutKey = cfg.id
+    // ⚠️ 换机型必须让外观缓存失效：新机型的第 N 档是另一张图，
+    //    但 stage 数字可能正好相同（都是 1）→ 不重置就会"换了飞机图没换"。
+    this.appliedStage = -1
   }
 
   /** 清零全部发射器的冷却与持续物（新局开始 / 本局作废时） */
   private resetEmitters(): void {
     for (const e of this.emitters) e.reset()
+  }
+
+  /** 上次应用过的外观档（-1 = 还没应用过）；用来避免每帧重复写 spriteFrame */
+  private appliedStage = -1
+
+  /**
+   * 按【当前火力等级】换机身外观 —— 升级到一定档位就换个样子。
+   *
+   * 【为什么外观档不等于火力档】
+   *   火力有 5 档（数值爽感要细），皮肤只有 3 张（美术成本要省），
+   *   两者的对齐关系是【ShipRegistry.STAGE_OF_LEVEL 这张表】，不在这里算 ——
+   *   否则 Player / 选机界面 / 将来的皮肤系统会各写一份，早晚不一致。
+   *
+   * 【为什么记 appliedStage】
+   *   本方法挂在 `player_data_change` 上，而**加分 / 扣血也会广播这个事件** ——
+   *   不判重的话每中一枪都白写一次 spriteFrame（会触发一次合批重建）。
+   *   外观档没变就直接 return，代价是 1 次整数比较。
+   *
+   * ⚠️ 这里【不做任何数据写入】：外观是 weaponLevel 的【推导结果】，不是第二份真值。
+   *    绝不往 PlayerData 里加 spriteIndex —— 那就是又一个"双源"。
+   */
+  private applyAppearance(data: Readonly<IPlayerData>): void {
+    if (!this.shipSprite) return
+
+    const stage = stageOfLevel(data.weaponLevel)
+    if (stage === this.appliedStage) return
+
+    const frame = getShipSprite(this.ship.id, stage)
+    // 该档没图（内容待补）→ 保留当前外观，不要把飞机变成空白
+    if (!frame) return
+
+    this.shipSprite.spriteFrame = frame
+    this.appliedStage = stage
   }
 
   /**
@@ -162,6 +243,9 @@ export class Player extends Component {
       bullets: this.bulletManager,
       beamLayer: this.beamLayer,
       mods: NO_MODS,
+      // 子弹外观来自【当前机型自己的资源】（ShipAsset.bulletPrefab）。
+      // 激光机型没有子弹 → 为 null，BeamEmitter 不读这个字段，不受影响。
+      bulletPrefab: getShipPackageOr(this.ship.id)?.asset.bulletPrefab ?? null,
     }
 
     for (const e of this.emitters) {

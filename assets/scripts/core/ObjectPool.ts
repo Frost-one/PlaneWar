@@ -61,6 +61,10 @@ export class ObjectPool {
    */
   release(node: Node): void {
     if (this.alive > 0) this.alive--
+    // 先停用、再脱离父节点。
+    // 停用会触发组件 onDisable —— 那是"归还池中"与"仍在场上"的分界线：
+    // 少了这一行，池里的节点仍然 active，会继续收到事件广播、继续参与每帧回调。
+    node.active = false
     node.removeFromParent()
     if (this.freeCount < this.capacity) {
       this.freeCount++

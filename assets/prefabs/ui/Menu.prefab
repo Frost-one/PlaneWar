@@ -1166,13 +1166,10 @@
       "b": 255,
       "a": 255
     },
-    "_spriteFrame": {
-      "__uuid__": "2620db73-ca83-4c2a-9729-d660d1546a13@f9941",
-      "__expectedType__": "cc.SpriteFrame"
-    },
+    "_spriteFrame": null,
     "_type": 0,
     "_fillType": 0,
-    "_sizeMode": 1,
+    "_sizeMode": 0,
     "_fillCenter": {
       "__type__": "cc.Vec2",
       "x": 0,
@@ -2463,20 +2460,6 @@
     "__prefab": {
       "__id__": 93
     },
-    "shipSprites": [
-      {
-        "__uuid__": "4f179fc1-ebd3-4983-b2f2-d388ae1adba2@f9941",
-        "__expectedType__": "cc.SpriteFrame"
-      },
-      {
-        "__uuid__": "2620db73-ca83-4c2a-9729-d660d1546a13@f9941",
-        "__expectedType__": "cc.SpriteFrame"
-      },
-      {
-        "__uuid__": "68dcbce4-4e16-4b77-a94e-89b2981b7396@f9941",
-        "__expectedType__": "cc.SpriteFrame"
-      }
-    ],
     "previewSprite": {
       "__id__": 41
     },
@@ -2510,6 +2493,8 @@
       "__id__": 0
     },
     "fileId": "d4+vMi/cxHhrpiCWKu0vLA",
+    "instance": null,
+    "targetOverrides": null,
     "nestedPrefabInstanceRoots": null
   },
   {

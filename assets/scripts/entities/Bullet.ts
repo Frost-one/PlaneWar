@@ -12,6 +12,7 @@ import { eventBus } from '../core/EventBus'
 import { StateChangePayload, GameState } from '../data/GameState'
 // 仅用于类型标注，编译后不产生真实 import，避免与 BulletManager 形成循环依赖
 import type { BulletManager } from '../managers/BulletManager'
+import type { Prefab } from 'cc'
 import { PHYSICS_GROUP } from '../data/config/PhysicsGroups'
 const { ccclass, property } = _decorator
 
@@ -93,7 +94,16 @@ export class Bullet extends Component {
   private manager: BulletManager | null = null
 
   /**
-   * 由 BulletManager 在生成时调用：注入管理者引用 + 本次飞行的参数。
+   * 本颗子弹来自哪个 prefab —— 决定回收时【回哪个对象池】。
+   *
+   * 由生成时注入并记住（Enemy 用的是同一套路）。
+   * 之所以要自己记住：对象池是【按 prefab 分池】的，回收端必须知道来源，
+   * 否则多弹种时会把子弹还到别的池里，表现为外观错乱或节点不回收。
+   */
+  private prefab: Prefab | null = null
+
+  /**
+   * 由 BulletManager 在生成时调用：注入管理者引用 + 本次飞行的参数 + 来源 prefab。
    *
    * ⚠️ 与 onLoad 的先后顺序：设置 parent 会触发激活，onLoad 可能已跑过、也可能还没。
    * 所以这里不假设刚体已就绪 —— applyVelocity 内部会兜底 getComponent，
@@ -101,12 +111,15 @@ export class Bullet extends Component {
    *
    * ⚠️ 节点可能来自对象池复用：所有"上一世"的状态必须在此完整复位，否则会出现鬼影子弹。
    */
-  public init(manager: BulletManager, params: BulletSpawnParams): void {
+  public init(manager: BulletManager, params: BulletSpawnParams, prefab: Prefab): void {
     this.manager = manager
 
     // —— 复用自池中的节点带着「上一世」的全部状态，必须在此完整复位 ——
     this.released = false
     this.isPaused = false
+    // 来源 prefab 必须每颗重设：池里复用的是上一颗的壳，
+    // 漏了这行就会按上一颗的来源回池（多弹种时致命）
+    this.prefab = prefab
     // 清空上一世残留的定时器（如命中后延迟销毁的 scheduleOnce 回调）
     this.unscheduleAllCallbacks()
 
@@ -147,10 +160,11 @@ export class Bullet extends Component {
     )
   }
 
+  /**
+   * 同步、无依赖初始化：只缓存组件引用与设置物理属性。
+   * 这些对节点只需做一次 —— 对象池复用时不会再次触发 onLoad。
+   */
   protected onLoad(): void {
-    const collider = this.getComponent(Collider2D)
-    collider.on(Contact2DType.BEGIN_CONTACT, this.onBeginContact, this)
-
     // —— 移动交给刚体（物理模型）驱动，不再手动 setPosition ——
     const rigidBody = this.getComponent(RigidBody2D)
     this.rigidBody = rigidBody
@@ -164,16 +178,41 @@ export class Bullet extends Component {
       // 兜底：没有刚体就不会移动（不再假装有"手动位移"回退）
       console.warn('[Bullet] 未找到 RigidBody2D，子弹将无法移动')
     }
+  }
 
+  /**
+   * 订阅与碰撞监听跟随【激活状态】，与 onDisable 严格对称。
+   *
+   * 为什么不放 onLoad：子弹走对象池，回收时只是【停用】并不销毁。
+   * 放在 onLoad 会让池里"休眠的子弹"继续收 state_change 广播、继续触发碰撞回调。
+   * 首次实例化时 onLoad 早于 onEnable；复用时只走 onEnable —— 两种路径都能订阅上。
+   */
+  protected onEnable(): void {
+    const collider = this.getComponent(Collider2D)
+    if (collider) {
+      collider.on(Contact2DType.BEGIN_CONTACT, this.onBeginContact, this)
+    }
     eventBus.on('state_change', this.onStateChange, this)
 
     // 兼容"init 早于 onLoad"的顺序（详见 init 的说明）
     this.applyVelocity()
   }
 
-  protected onDestroy(): void {
+  protected onDisable(): void {
     const collider = this.getComponent(Collider2D)
-    collider.off(Contact2DType.BEGIN_CONTACT, this.onBeginContact, this)
+    if (collider) {
+      collider.off(Contact2DType.BEGIN_CONTACT, this.onBeginContact, this)
+    }
+    eventBus.off('state_change', this.onStateChange, this)
+  }
+
+  protected onDestroy(): void {
+    // 兜底注销：生命周期规范要求 onDestroy 必须完成"从事件总线注销"，
+    // 不依赖 onDisable 是否被调用过。off 是幂等的，重复调用无害。
+    const collider = this.getComponent(Collider2D)
+    if (collider) {
+      collider.off(Contact2DType.BEGIN_CONTACT, this.onBeginContact, this)
+    }
     eventBus.off('state_change', this.onStateChange, this)
   }
 
@@ -210,15 +249,15 @@ export class Bullet extends Component {
 
   /**
    * 统一的归还对象池入口。
-   * 交给管理器把自身从追踪列表摘除，并按 prefab 还回对应的池（管理器内部决定复用或销毁）。
+   * 交给管理器把自身从追踪列表摘除，归还到对象池（管理器内部决定复用或销毁）。
    * released 标志防止「命中即销毁」的延迟回调在复用后重复触发。
    */
   private despawn(): void {
     // 防止同一颗子弹在「复用后」被上一世的延迟销毁回调再次回收
     if (this.released) return
     this.released = true
-    // 交给管理器归还到对象池（管理器会把它从追踪列表摘除 + 按 prefab 回池）
-    this.manager?.releaseBullet(this.node)
+    // 交给管理器归还到对象池（带上自己的来源 prefab，才能回到正确的池）
+    if (this.prefab) this.manager?.releaseBullet(this.node, this.prefab)
   }
 
   onBeginContact(selfCollider2D: Collider2D, otherCollider: Collider2D) {

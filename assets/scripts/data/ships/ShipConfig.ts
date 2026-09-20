@@ -1,5 +1,65 @@
 // 仅用于类型标注：契约层不 import cc，也不 import 任何运行时资源
 import type { Emitter } from '../../entities/emitters/Emitter'
+import type { SpriteFrame, Prefab, AudioClip } from 'cc'
+
+/**
+ * 资源路径 —— 写在飞船文件里的【静态字符串】，不涉及任何异步。
+ *
+ * 【为什么用可选字段，而不是全部必填】
+ *   机型之间资源种类本来就不一样：激光机没有子弹 prefab，散射机没有光束 prefab。
+ *   "没有"就用 `?` 表达，比塞一个假资源或空字符串干净 ——
+ *   加载侧统一回落 null，消费侧判空即可。
+ *
+ * 【为什么保留成一个对象，而不是摊平成 spritePath / bulletPath】
+ *   ① 加一种资源只加一行，ShipConfig 的字段数恒定；
+ *   ② 整个对象一次性交给加载器，加字段不用改加载器签名；
+ *   ③ 将来做皮肤可整体替换（`assetPaths = SKIN_XMAS`）。
+ */
+export interface ShipAssetPath {
+  /**
+   * 机身贴图【外观档】：与发射器的火力档【同索引】。
+   *
+   *   sprites[0] / [1] / [2] …  ⟷  火力第 1 / 2 / 3 档时的样子
+   *
+   * 【为什么是数组，而不是 sprite / sprite2 / sprite3】
+   *   档位数是【逻辑】，已经由发射器的 levels.length 表达；外观只是跟着它走。
+   *   写死三个字段等于把"上限 3 档"焊进契约，将来加到 6 档要改接口。
+   *
+   * ⚠️ **数组长度不必等于火力档数** ——
+   *   3 张图配 5 档火力是常态，对齐关系交给 ShipRegistry 的 STAGE_OF_LEVEL 表，
+   *   这里只负责"有哪些图"，不负责"哪档用哪张"。
+   */
+  readonly sprites: readonly string[]
+  /** 子弹 prefab：实体弹机型才有，激光机型不写 */
+  readonly bullet?: string
+  /** 光束 prefab：激光机型才有 */
+  readonly beam?: string
+  /** 射击音效（可选） */
+  readonly shoot?: string
+  /** 选机界面图标（可选，将来用） */
+  readonly icon?: string
+}
+
+/**
+ * 加载之后的真实资源对象。
+ * 与上面的路径是一一对应的关系：路径是静态配置，这里是运行时产物。
+ *
+ * ⚠️ `sprites` 用【数组】而不是 `Map<路径, 图>`：
+ *    `sprites[i]` 对应第 i 档外观，**下标本身就是语义**、天然带顺序；
+ *    Map 会把这个语义丢掉（想取第 2 档还得先知道它的路径）。
+ *    某一档没加载出来时该位为 null，由消费侧决定回落哪一张。
+ */
+export interface ShipAsset {
+  /**
+   * 机身贴图列表（可为稀疏）。
+   * ✅ **第 0 项必定非 null** —— 加载侧保证：连第一张都取不到就整架算失败，
+   *    不会往缓存里塞一个"有 config 但没图"的半成品。
+   */
+  readonly sprites: readonly (SpriteFrame | null)[]
+  readonly bulletPrefab: Prefab | null
+  readonly beamPrefab: Prefab | null
+  readonly shootSfx: AudioClip | null
+}
 
 /**
  * 单架飞机的配置（只读模板）。
@@ -36,11 +96,10 @@ export interface ShipConfig {
   readonly fireStyleName: string
 
   /**
-   * 外观序号：对应 ShipSelectView / Player 上 @property([SpriteFrame]) 的下标。
+   * 资源路径：与数值写在同一个文件里（"一架飞机一套文件"）。
    *
-   * ⚠️ 临时保留：按《飞船模块重构设计》，资源的对应关系应下沉到 ShipAssetTable
-   *    （用 shipId 做键），届时本字段删除。
-   *    本次（发射器组合重构）不动外观链路，以免牵连选机界面。
+   * ⚠️ 这里是【路径字符串】，不是资源本身 —— 资源对象是运行时的，
+   *    由 ShipRegistry 在启动阶段加载并缓存，之后全局同步取用。
    */
-  readonly spriteIndex: number
+  readonly assetPaths: ShipAssetPath
 }

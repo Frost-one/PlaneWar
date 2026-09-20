@@ -1,6 +1,6 @@
 // 仅用于类型标注：`import type` 编译后不产生真实 import，避免与 BulletManager 形成循环依赖
 import type { BulletManager } from '../../managers/BulletManager'
-import type { Node } from 'cc'
+import type { Node, Prefab } from 'cc'
 
 /**
  * 发射器 —— 开火的最小可组合单元。
@@ -47,6 +47,20 @@ export interface FireContext {
   readonly y: number
   /** 子弹工厂（玩家的或敌方的），由持有者注入 */
   readonly bullets: BulletManager | null
+
+  /**
+   * 本次开火要用哪种子弹 prefab（由持有者从机型资源注入）。
+   *
+   * 【为什么放进 ctx 而不是让 BulletManager 自己知道】
+   *   BulletManager 一旦认识"机型"，就等于给它加了一条对玩家数据的反向依赖，
+   *   将来敌机开火、僚机副武器都复用不了它。放进 ctx 之后，
+   *   BulletManager 退化成纯工厂："给我 prefab，我给你子弹"。
+   *
+   * 【激光机型为 null】
+   *   激光没有实体弹，`BeamEmitter` 根本不读这个字段 ——
+   *   "没有"就用 null 表达，不用塞一个假 prefab。
+   */
+  readonly bulletPrefab: Prefab | null
   /** 持续型（激光）的挂载层；发实体弹的发射器用不到 */
   readonly beamLayer: Node | null
   /** 修饰量：飞船升级 / 道具带来的乘区 */

@@ -1,5 +1,5 @@
 import { eventBus } from '../core/EventBus'
-import { DEFAULT_SHIP_ID, getShipOr } from './ships/ShipTable'
+import { DEFAULT_SHIP_ID, getShipOr } from './ships/ShipRegistry'
 import type { ShipConfig } from './ships/ShipConfig'
 
 /** 玩家数据字段的形状：用于整份快照、partial 批量设置与存档 */

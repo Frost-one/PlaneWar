@@ -27,6 +27,18 @@ export const SHIP_BLUE: ShipConfig = {
   maxHp: 100,
   speed: 480,
   fireStyleName: '激光',
-  spriteIndex: 2,
   emitters: [new BeamEmitter('beam', LEVELS)],
+
+  // 资源：激光机【没有 bullet】，用 beam 代替 —— 不写就是没有，不用塞假值
+  assetPaths: {
+    // ⚠️ 与苍岩一样是【占位路径】，图还没进 resources/。
+    //    蓝色机现在是靠"加载失败也能跑"的兜底在运行（Player 保持 prefab 原图）。
+    sprites: [
+      'ships/ship_blue/sprite_level_1/spriteFrame',
+      'ships/ship_blue/sprite_level_2/spriteFrame',
+      'ships/ship_blue/sprite_level_3/spriteFrame',
+    ],
+    beam: 'ships/ship_blue/beam',
+    // shoot: 'ships/ship_blue/shoot',
+  },
 }

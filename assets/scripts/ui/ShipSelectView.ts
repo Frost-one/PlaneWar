@@ -1,8 +1,8 @@
-import { _decorator, Button, Component, Label, Sprite, SpriteFrame } from 'cc'
+import { _decorator, Button, Component, Label, Sprite } from 'cc'
 import { eventBus } from '../core/EventBus'
 import { playerData } from '../data/PlayerData'
 import type { IPlayerData } from '../data/PlayerData'
-import { cycleShip, getShip } from '../data/ships/ShipTable'
+import { cycleShip, getShip, getShipSprite } from '../data/ships/ShipRegistry'
 import type { ShipConfig } from '../data/ships/ShipConfig'
 const { ccclass, property } = _decorator
 
@@ -25,13 +25,6 @@ const { ccclass, property } = _decorator
  */
 @ccclass('ShipSelectView')
 export class ShipSelectView extends Component {
-  /**
-   * 三架飞机的外观图，**顺序必须与 SHIP_CONFIGS 一致**（下标 = ShipConfig.spriteIndex）。
-   * 当前显示的那张会按选中机型的 spriteIndex 从这里取。
-   */
-  @property([SpriteFrame])
-  shipSprites: SpriteFrame[] = []
-
   /** 机型预览图节点（挂 Sprite 组件）—— 切换时改它的 spriteFrame */
   @property(Sprite)
   previewSprite: Sprite | null = null
@@ -56,7 +49,14 @@ export class ShipSelectView extends Component {
   @property(Button)
   rightButton: Button | null = null
 
-  protected onLoad(): void {
+  /**
+   * 订阅与按钮监听一律跟随【激活状态】，与 onDisable 严格对称。
+   *
+   * 为什么不用 onLoad / onDestroy：
+   *   本面板由 UIManager 反复切换 active，隐藏期间不该继续收广播、也不该刷新；
+   *   放在 onLoad 会让隐藏的面板一直挂着订阅（白干活，且逻辑上属于"还在监听一个看不见的界面"）。
+   */
+  protected onEnable(): void {
     if (this.leftButton) {
       this.leftButton.node.on(Button.EventType.CLICK, this.onPrev, this)
     }
@@ -64,14 +64,16 @@ export class ShipSelectView extends Component {
       this.rightButton.node.on(Button.EventType.CLICK, this.onNext, this)
     }
 
-    // 订阅玩家数据：别处（存档、默认值、reset）改了机型也能同步刷新
+    // 玩家数据：别处（存档、默认值、reset）改了机型也能同步刷新
     eventBus.on('player_data_change', this.onPlayerDataChange, this)
+    // 资源是异步加载的，可能在本面板首次激活之后才就绪 —— 靠这条广播补一次刷新
+    eventBus.on('ship_assets_ready', this.onShipAssetsReady, this)
 
-    // 首次进入主动拉一次快照（此时可能还没收到过任何广播）
+    // 激活时主动拉一次快照：可能已经错过了之前的广播
     this.onPlayerDataChange(playerData.getSnapshot())
   }
 
-  protected onDestroy(): void {
+  protected onDisable(): void {
     if (this.leftButton) {
       this.leftButton.node.off(Button.EventType.CLICK, this.onPrev, this)
     }
@@ -79,6 +81,14 @@ export class ShipSelectView extends Component {
       this.rightButton.node.off(Button.EventType.CLICK, this.onNext, this)
     }
     eventBus.off('player_data_change', this.onPlayerDataChange, this)
+    eventBus.off('ship_assets_ready', this.onShipAssetsReady, this)
+  }
+
+  /** 资源异步加载完成 → 用当前快照补一次刷新 */
+  private onShipAssetsReady(): void {
+    // 异步广播到达时，节点可能已经被销毁或回收 —— 先确认还活着再操作
+    if (!this.node?.isValid) return
+    this.onPlayerDataChange(playerData.getSnapshot())
   }
 
   // ==================== 交互 ====================
@@ -94,7 +104,7 @@ export class ShipSelectView extends Component {
   }
 
   /**
-   * 按偏移量切换机型（取模的坑已收进 ShipTable.cycleShip）。
+   * 按偏移量切换机型（取模的坑已收进 ShipRegistry.cycleShip）。
    *
    * 循环（而非到头就停）的原因：只有 3 架，循环后"左右都能一直点"，
    * 玩家想从第 1 架到第 3 架只需按一次左箭头。
@@ -122,9 +132,13 @@ export class ShipSelectView extends Component {
       return
     }
 
-    // 外观：下标取图，越界/未拖引用时保持原样（不静默换错图）
-    const frame = this.shipSprites[cfg.spriteIndex]
-    if (this.previewSprite && frame) {
+    // 外观：取这架飞机的【第 1 档】贴图（选机界面只展示初始形态）。
+    // 升级后的形态由 Player 自己按火力等级切换，与本预览无关。
+    // 资源还没放进 resources/ 时为 null —— 保持 prefab 原样，不静默换错图。
+    const frame = getShipSprite(cfg.id)
+    if (!frame) {
+      console.warn(`[ShipSelectView] 机型贴图未加载：${cfg.id}（检查 assets/resources/ 下是否放了资源）`)
+    } else if (this.previewSprite) {
       this.previewSprite.spriteFrame = frame
     }
 

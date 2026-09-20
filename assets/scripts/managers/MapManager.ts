@@ -206,6 +206,11 @@ export class MapManager extends Component {
    */
   private pending: number[][] = []
 
+  /**
+   * 【订阅为什么放在 onLoad，而不是 onEnable】
+   *   本组件挂在常驻容器节点上、全程不失活，用 onEnable/onDisable 配对没有实际收益。
+   *   这是生命周期规范允许的一种例外，规范要求在注释中写明原因 —— 原因即上面这句。
+   */
   protected onLoad(): void {
     eventBus.on('state_change', this.onStateChange, this)
     this.build()
