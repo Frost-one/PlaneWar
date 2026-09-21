@@ -62,9 +62,9 @@ export class Player extends Component {
   /**
    * 机身 Sprite（换机型 / 升火力换外观时改它的 spriteFrame）。
    *
-   * ⚠️ **没拖也能跑**：为 null 时整条换图链路静默跳过，飞机保持 prefab 里的原图。
-   *    这是刻意的 —— 换图属于表现增强，不该因为漏拖一个引用就崩。
-   *    但正因如此，忘了拖**不会报错**，只是"升级后外形没变"，排查时先看这里。
+   * **不用在 Inspector 里拖引用也能工作**：Player 节点自身就挂了一个 Sprite 组件，
+   * 若这里没拖（为 null），`applyAppearance` 会自动回退到 `getComponent(Sprite)`，
+   * 换机型 / 升火力一定看得到贴图变化。显式拖了某个 Sprite 就以拖的为准（回退逻辑跳过）。
    */
   @property(Sprite)
   shipSprite: Sprite | null = null
@@ -208,6 +208,10 @@ export class Player extends Component {
    *    绝不往 PlayerData 里加 spriteIndex —— 那就是又一个"双源"。
    */
   private applyAppearance(data: Readonly<IPlayerData>): void {
+    // 没在 Inspector 拖 shipSprite 时，回退到 Player 节点自身的 Sprite 组件
+    // （机身图就挂在这个节点上）。这样换机型 / 升火力一定看得到贴图变化，
+    // 不必手动拖引用；显式拖了某个 Sprite 时 this.shipSprite 非 null，这步跳过。
+    if (!this.shipSprite) this.shipSprite = this.getComponent(Sprite)
     if (!this.shipSprite) return
 
     const stage = stageOfLevel(data.weaponLevel)

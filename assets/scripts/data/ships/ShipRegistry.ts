@@ -46,6 +46,26 @@ export interface ShipPackage {
 const assetCache = new Map<string, ShipAsset>()
 
 /**
+ * 加载是否已经**跑完一轮**（无论成功几家）。
+ *
+ * 【为什么必须有这个标志】
+ *   上层拿不到贴图时，原因只有两种，但处理方式完全相反：
+ *     ① 资源还在加载中 → **什么都不该做**（等 `ship_assets_ready` 广播即可）
+ *     ② 加载已结束但还是没有 → **这才是真的缺资源**，该警告
+ *   只靠 `getShipSprite() === null` 无法区分二者 —— 加载前和加载失败返回的都是 null。
+ *   没有这个标志，UI 在启动第一帧必然打一条"资源没放好"的误导警告
+ *   （因为选机面板的 onEnable 早于 loadShipAssets 完成）。
+ *
+ * 语义边界：它只说"跑完了"，**不代表加载成功**（失败几家就少几家）。
+ */
+let loaded = false
+
+/** 资源加载是否已结束（无论是否成功）。用于区分"还没好"与"真的没有"。 */
+export function isShipAssetsLoaded(): boolean {
+  return loaded
+}
+
+/**
  * 【火力档 → 外观档】的对齐表。
  *
  * 为什么要这张表、而不是直接 `sprites[fireLevel - 1]`：
@@ -135,6 +155,10 @@ export async function loadShipAssets(): Promise<void> {
 
   // 成功的一律不提，最后只汇总一句（没就绪的自然体现在数字上）
   console.log(`[ships] 资源加载完成：${assetCache.size}/${SHIP_TABLE.length}`)
+
+  // 先置完成标志，再广播 —— 顺序同下面的缓存，否则订阅方被唤醒时
+  // 仍会读到 loaded === false，又把"缺图"误判成"还在加载"。
+  loaded = true
 
   // —— 广播"资源就绪" ——
   // 顺序必须是【先写缓存（上面的 assetCache.set）→ 再广播】，

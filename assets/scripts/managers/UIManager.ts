@@ -33,14 +33,16 @@ export class UIManager extends Component {
   private gameResult: Node | null = null
 
   /**
-   * 只做同步、无依赖的初始化。
-   *
-   * 【为什么订阅放在 onLoad 而不是 onEnable】
-   *   本组件挂在常驻节点上、全程不失活，用 onEnable/onDisable 配对没有实际收益。
-   *   生命周期规范允许这种例外，但要求在注释中写明原因 —— 原因就是上面这句。
+   * 订阅跟随【激活状态】，与 onDisable 严格对称（统一走默认模式，不再用常驻例外）。
+   * 本组件挂在常驻节点上、全程不失活，onDisable 实际不会被调用，
+   * 但保持 onEnable/onDisable 配对能与实体/UI 组件完全一致，也避免将来若节点被停用却忘了退订。
    */
-  protected onLoad(): void {
+  protected onEnable(): void {
     eventBus.on('state_change', this.onStateChange, this)
+  }
+
+  protected onDisable(): void {
+    eventBus.off('state_change', this.onStateChange, this)
   }
 
   /**
@@ -62,6 +64,7 @@ export class UIManager extends Component {
   }
 
   protected onDestroy(): void {
+    // 兜底注销（off 幂等），不依赖 onDisable 是否被调用过
     eventBus.off('state_change', this.onStateChange, this)
   }
 

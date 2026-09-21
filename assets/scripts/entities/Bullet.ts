@@ -252,7 +252,7 @@ export class Bullet extends Component {
    * 交给管理器把自身从追踪列表摘除，归还到对象池（管理器内部决定复用或销毁）。
    * released 标志防止「命中即销毁」的延迟回调在复用后重复触发。
    */
-  private despawn(): void {
+  public despawn(): void {
     // 防止同一颗子弹在「复用后」被上一世的延迟销毁回调再次回收
     if (this.released) return
     this.released = true

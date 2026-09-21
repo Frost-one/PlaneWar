@@ -2,7 +2,7 @@ import { _decorator, Button, Component, Label, Sprite } from 'cc'
 import { eventBus } from '../core/EventBus'
 import { playerData } from '../data/PlayerData'
 import type { IPlayerData } from '../data/PlayerData'
-import { cycleShip, getShip, getShipSprite } from '../data/ships/ShipRegistry'
+import { cycleShip, getShip, getShipSprite, isShipAssetsLoaded } from '../data/ships/ShipRegistry'
 import type { ShipConfig } from '../data/ships/ShipConfig'
 const { ccclass, property } = _decorator
 
@@ -134,12 +134,17 @@ export class ShipSelectView extends Component {
 
     // 外观：取这架飞机的【第 1 档】贴图（选机界面只展示初始形态）。
     // 升级后的形态由 Player 自己按火力等级切换，与本预览无关。
-    // 资源还没放进 resources/ 时为 null —— 保持 prefab 原样，不静默换错图。
+    //
+    // 取不到图有两种原因，处理方式相反：
+    //   ① 资源还在加载（本面板的 onEnable 会早于 loadShipAssets 完成）
+    //      → 什么都不做，等 `ship_assets_ready` 广播唤醒即可；
+    //   ② 加载已结束却仍没有 → 这才是真的缺资源，保留 prefab 原样并警告。
+    // 不区分二者的话，每次进菜单都会先打一条误导性的"资源没放好"警告。
     const frame = getShipSprite(cfg.id)
-    if (!frame) {
+    if (frame) {
+      if (this.previewSprite) this.previewSprite.spriteFrame = frame
+    } else if (isShipAssetsLoaded()) {
       console.warn(`[ShipSelectView] 机型贴图未加载：${cfg.id}（检查 assets/resources/ 下是否放了资源）`)
-    } else if (this.previewSprite) {
-      this.previewSprite.spriteFrame = frame
     }
 
     if (this.nameLabel) this.nameLabel.string = cfg.name

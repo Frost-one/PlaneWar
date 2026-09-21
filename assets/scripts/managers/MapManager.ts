@@ -207,16 +207,28 @@ export class MapManager extends Component {
   private pending: number[][] = []
 
   /**
-   * 【订阅为什么放在 onLoad，而不是 onEnable】
-   *   本组件挂在常驻容器节点上、全程不失活，用 onEnable/onDisable 配对没有实际收益。
-   *   这是生命周期规范允许的一种例外，规范要求在注释中写明原因 —— 原因即上面这句。
+   * 同步、无依赖的初始化：一次性铺好整张地图（建行节点 + WFC 生成地形）。
+   * 这是 onLoad 该做的事 —— 同步、无 await、不依赖其他组件的 start。
    */
   protected onLoad(): void {
-    eventBus.on('state_change', this.onStateChange, this)
     this.build()
   }
 
+  /**
+   * 订阅跟随【激活状态】，与 onDisable 严格对称（统一走默认模式，不再用常驻例外）。
+   * 本组件挂在常驻容器节点上、全程不失活，onDisable 实际不会被调用，
+   * 但保持 onEnable/onDisable 配对能与实体/UI 组件完全一致，也避免将来节点被停用时漏退订。
+   */
+  protected onEnable(): void {
+    eventBus.on('state_change', this.onStateChange, this)
+  }
+
+  protected onDisable(): void {
+    eventBus.off('state_change', this.onStateChange, this)
+  }
+
   protected onDestroy(): void {
+    // 兜底注销（off 幂等），不依赖 onDisable 是否被调用过
     eventBus.off('state_change', this.onStateChange, this)
   }
 
