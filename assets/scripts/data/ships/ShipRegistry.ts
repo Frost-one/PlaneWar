@@ -22,13 +22,13 @@ import { SHIP_BLUE } from './ShipBlue'
  */
 
 /** 全部机型 */
-export const SHIP_TABLE: readonly ShipConfig[] = [SHIP_RED, SHIP_GREEN, SHIP_BLUE]
+export const SHIP_REGISTRY: readonly ShipConfig[] = [SHIP_RED, SHIP_GREEN, SHIP_BLUE]
 
 /** 默认机型：还没选过时的兜底 */
 export const DEFAULT_SHIP_ID = SHIP_RED.id
 
 /** 全部机型 id（存档校验 / Debug 面板用） */
-export const SHIP_IDS: readonly string[] = SHIP_TABLE.map((c) => c.id)
+export const SHIP_IDS: readonly string[] = SHIP_REGISTRY.map((c) => c.id)
 
 /** 一架飞机的"数值 + 资源"——消费侧唯一需要认识的东西 */
 export interface ShipPackage {
@@ -123,7 +123,7 @@ export function getShipSprite(id: string, stage = 0): SpriteFrame | null {
  */
 export async function loadShipAssets(): Promise<void> {
   await Promise.all(
-    SHIP_TABLE.map(async (cfg) => {
+    SHIP_REGISTRY.map(async (cfg) => {
       const p = cfg.assetPaths
 
       // 贴图用 loadAssetList（不是 loadAssetOrNull）：它内部 Promise.all 按顺序并发，
@@ -154,7 +154,7 @@ export async function loadShipAssets(): Promise<void> {
   )
 
   // 成功的一律不提，最后只汇总一句（没就绪的自然体现在数字上）
-  console.log(`[ships] 资源加载完成：${assetCache.size}/${SHIP_TABLE.length}`)
+  console.log(`[ships] 资源加载完成：${assetCache.size}/${SHIP_REGISTRY.length}`)
 
   // 先置完成标志，再广播 —— 顺序同下面的缓存，否则订阅方被唤醒时
   // 仍会读到 loaded === false，又把"缺图"误判成"还在加载"。
@@ -171,7 +171,7 @@ export async function loadShipAssets(): Promise<void> {
 
 /** 按 id 取"数值 + 资源"，任一缺失返回 null（调用方决定如何兜底） */
 export function getShipPackage(id: string): ShipPackage | null {
-  const config = SHIP_TABLE.find((c) => c.id === id)
+  const config = SHIP_REGISTRY.find((c) => c.id === id)
   const asset = assetCache.get(id)
   if (!config || !asset) return null
   return { config, asset }
@@ -189,7 +189,7 @@ export function getShipPackageOr(id: string): ShipPackage | null {
 
 /** 按 id 查机型，查不到返回 null */
 export function getShip(id: string): ShipConfig | null {
-  return SHIP_TABLE.find((c) => c.id === id) ?? null
+  return SHIP_REGISTRY.find((c) => c.id === id) ?? null
 }
 
 /** 兜底版：查不到时回落默认机型 */
@@ -203,8 +203,8 @@ export function getShipOr(id: string): ShipConfig {
  * 必须 `((x % n) + n) % n` 才对 —— 这种坑不该让 UI 层记。
  */
 export function cycleShip(currentId: string, offset: number): ShipConfig {
-  const total = SHIP_TABLE.length
-  const current = SHIP_TABLE.findIndex((c) => c.id === currentId)
+  const total = SHIP_REGISTRY.length
+  const current = SHIP_REGISTRY.findIndex((c) => c.id === currentId)
   const base = current < 0 ? 0 : current
-  return SHIP_TABLE[(((base + offset) % total) + total) % total]
+  return SHIP_REGISTRY[(((base + offset) % total) + total) % total]
 }

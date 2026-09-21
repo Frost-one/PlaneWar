@@ -118,7 +118,10 @@
       "b": 255,
       "a": 255
     },
-    "_spriteFrame": null,
+    "_spriteFrame": {
+      "__uuid__": "c26ca335-9179-4c8e-bdd0-f630c3274eab@f9941",
+      "__expectedType__": "cc.SpriteFrame"
+    },
     "_type": 0,
     "_fillType": 0,
     "_sizeMode": 0,
@@ -152,7 +155,6 @@
     },
     "bulletManager": null,
     "beamLayer": null,
-    "shipSprite": null,
     "_id": ""
   },
   {

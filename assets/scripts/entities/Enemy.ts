@@ -1,14 +1,13 @@
-import { _decorator, Collider2D, Component, Contact2DType, Prefab } from 'cc'
+import { _decorator, BoxCollider2D, Collider2D, Component, Contact2DType, Node, Prefab, Size, Sprite, UITransform } from 'cc'
 import { GameConfig } from '../data/config/GameConfig'
 import { eventBus } from '../core/EventBus'
 import { StateChangePayload, GameState } from '../data/GameState'
 import { poolManager } from '../core/PoolManager'
-import { EnemyMovePattern } from '../data/config/EnemyConfig'
-// 仅用于类型标注，编译后不产生真实 import，避免与 EnemyManager 形成循环依赖
+import { type EnemyConfig, type EnemyBounds, type EnemyMover } from '../data/enemies/EnemyConfig'
 import type { EnemyManager } from '../managers/EnemyManager'
-import type { EnemyConfig } from '../data/config/EnemyConfig'
 import { Bullet } from './Bullet'
 import { PHYSICS_GROUP } from '../data/config/PhysicsGroups'
+import { getEnemySprite } from '../data/enemies/EnemyRegistry'
 const { ccclass, property } = _decorator
 
 /**
@@ -28,19 +27,17 @@ export class Enemy extends Component {
   private maxHp = 1
   private hp = 1
   private score = 0
-  private collideDamage = 0
+  private damage = 0
 
   // —— 轨迹（由 init 从 cfg 拷入）——
-  private movePattern = EnemyMovePattern.Straight
-  private sineAmplitude = 0
-  private sineFrequency = 0
-  /**
-   * 悬停线（px）。null = 该敌机【没有】悬停需求 → 变 Hover 退化为直线穿屏。
-   *
-   * ⚠️ 不能用 0 当"未配置"：y=0 是屏幕正中，会被误认为一条真实的悬停线。
-   *    必须用 null 才能区分"没配"与"配在屏幕中央"。
-   */
-  private hoverY: number | null = null
+  private move: EnemyMover | null = null
+
+  /** 可活动边界：每帧传给移动函数，供正弦做对称夹紧 */
+  private static readonly BOUNDS: EnemyBounds = {
+    minX: GameConfig.BOUND_MIN_X,
+    maxX: GameConfig.BOUND_MAX_X,
+    minY: GameConfig.BOUND_MIN_Y,
+  }
 
   // —— 轨迹的运行时状态（每次生成都要复位）——
   private spawnX = 0   // Sine 的摆动基准 x
@@ -97,18 +94,37 @@ export class Enemy extends Component {
     this.maxHp = cfg.maxHp
     this.hp = cfg.maxHp          // 当前血量从满血开始
     this.score = cfg.score
-    this.collideDamage = cfg.collideDamage
+    this.damage = cfg.damage
 
-    // 2. 轨迹
-    this.movePattern = cfg.movePattern
-    this.sineAmplitude = cfg.sineAmplitude ?? 0
-    this.sineFrequency = cfg.sineFrequency ?? 0
-    this.hoverY = cfg.hoverY ?? null
+    // 2. 轨迹：直接拷入移动函数，专属参数已写死在各敌机文件的闭包里
+    this.move = cfg.move
 
     // 3. ⚠️ 运行时状态【每次都必须复位】—— 对象池复用会反复调用 init
     this.elapsed = 0
     this.spawnX = this.node.position.x   // ← 必须在 setPosition 之后调用 init！
     this.isPaused = false                // ← 若在暂停中被回收，取出后会一直冻结
+
+    // 4. 外观与体型：三种敌机【共用 1 个 prefab】，靠运行时换 SpriteFrame + 节点缩放区分。
+    //    —— 这就是"角色是数据"：size / 贴图全从 cfg 来，prefab 不再区分机型。
+    //    节点缩放等比例作用于节点内容（含碰撞体），与 cfg.scale 是一层线性关系、不会二次相乘。
+    const sprite = this.getComponent(Sprite)
+    if (sprite) sprite.spriteFrame = getEnemySprite(cfg.id)
+    this.node.setScale(cfg.scale, cfg.scale, 1)
+
+    // 5. 命中盒同步（修复"碰撞盒与图片错位"）：
+    //    TRIMMED 模式的 Sprite 换图后节点的 contentSize 会跟着变，
+    //    但 BoxCollider2D.size 是 prefab 里的固定值（24×17），不跟随 spriteFrame，
+    //    于是换了裁剪尺寸不同的图（精英 / BOSS）就会和机体错位。
+    //    这里在设完 SpriteFrame + 缩放之后，把碰撞盒尺寸现算成
+    //    节点 contentSize × cfg.hitScale，保证"碰撞盒永远紧贴机体"。
+    //    contentSize / collider.size 都是节点本地坐标、不受 scale 影响，
+    //    节点缩放等比例作用于两者，不会二次放大。
+    const ui = this.getComponent(UITransform)
+    const box = this.getComponent(BoxCollider2D)
+    if (ui && box) {
+      const k = cfg.hitScale ?? 1
+      box.size = new Size(ui.width * k, ui.height * k)
+    }
   }
 
   /**
@@ -156,11 +172,10 @@ export class Enemy extends Component {
    * 每帧推进轨迹。
    *
    * 职责分工的两层写法：
-   *   1. update 只管【通用部分】—— 暂停判定、推进 elapsed、算出本帧的位移增量
-   *   2. TRAJECTORIES 分派表只管【每种轨迹的位移规律】—— 拿到 dt 算出该往哪挪
+   *   1. update 只管【通用部分】—— 暂停判定、推进 elapsed、算出当前位置、出界回收
+   *   2. 轨迹形状全在 cfg.move（每个敌机自己写的函数）里 —— 它直接写 node 位置
    *
-   * 这样三种轨迹共享同一套"暂停 / 计时 / 回收"骨架，
-   * 新增轨迹只需在表里加一行，不用再碰 update。
+   * 新增一种轨迹 = 在某个敌机文件里写一个 move 函数，update 与 Enemy 通用骨架一行都不用改。
    */
   protected update(deltaTime: number): void {
     // 暂停/非游玩状态（菜单/暂停/结算）时冻结，不向下飞
@@ -170,82 +185,28 @@ export class Enemy extends Component {
     // 所以 sin(…) 的相位在暂停期间原地保留，恢复后从原处继续摆。
     this.elapsed += deltaTime
 
-    const step = this.speed * deltaTime
-    const move = Enemy.TRAJECTORIES[this.movePattern](this, step)
+    // —— 调用本敌机自己的移动函数：它直接写 node 位置 ——
+    // 通用骨架（暂停 / 计时 / 出界回收）留在 update，轨迹形状全在 cfg.move 里。
+    this.move?.(this.node, {
+      elapsed: this.elapsed,
+      dt: deltaTime,
+      startX: this.spawnX,
+      speed: this.speed,
+      bounds: Enemy.BOUNDS,
+    })
 
     // —— 超出玩家可视区下界则回收 ——
-    // ⚠️ 用"本帧的 y"判断，而不是 y 的增量 —— 悬停机不再下落，增量恒为 0
-    if (move.y < GameConfig.BOUND_MIN_Y - Enemy.DESTROY_EXTRA) {
+    // ⚠️ 读节点当前 y 判断，而不是移动函数的返回值：移动函数直接写位置，不回传。
+    if (this.node.position.y < GameConfig.BOUND_MIN_Y - Enemy.DESTROY_EXTRA) {
       this.despawn()
       return
     }
-
-    this.node.setPosition(move.x, move.y)
   }
 
   /**
-   * 轨迹函数：给定本帧的【步长】step（= speed · dt，px），返回本帧应处的节点坐标。
-   *
-   * 用"返回目标坐标"而不是"直接改节点"，是为了让【回收判定】能在 update 里
-   * 统一做 —— 各轨迹只表达"我该在哪"，不关心"我是否出界了"。
-   *
-   * ⚠️ step 是由 speed · dt 得来的，因此各轨迹不用再乘 dt；
-   *    需要时间的（Sine）读 this.elapsed（已由 update 累加好）。
+   * 轨迹形状不再集中在这里 —— 各敌机的移动函数写在 data/enemies/Enemy* 里（cfg.move），
+   * 由 update 每帧调用。要加新轨迹，写个函数即可，本文件不动。
    */
-  private static readonly TRAJECTORIES: Record<
-    EnemyMovePattern,
-    (e: Enemy, step: number) => { x: number; y: number }
-  > = {
-    /** 直线下坠：x 不变，y 每帧减 step */
-    [EnemyMovePattern.Straight]: (e, step) => {
-      const p = e.node.position
-      return { x: p.x, y: p.y - step }
-    },
-
-    /**
-     * 正弦横摆：以【出生点 x】为基准左右摆，同时持续下坠。
-     *
-     *   x = spawnX + amplitude · sin(2π · frequency · t)
-     *
-     * 与直线同速下坠 → 精英机只是"画着波浪往下走"，不会因为摆尾而变慢。
-     * 用 spawnX 而不累加上一帧的 x：若拿上一帧位置累加，振幅会随帧数漂移。
-     *
-     * ⚠️ 摆动会越界：出生点靠边时（如 x=374、幅度 120）波峰会跑到 494，整机飘出屏外。
-     *    这里用【对称夹紧】而不是直接 clamp —— 直接 clamp 会把波峰削平成一段直线。
-     *    夹紧后摆幅变小、但波形仍是正弦，观感自然。
-     */
-    [EnemyMovePattern.Sine]: (e, step) => {
-      const p = e.node.position
-      const phase = 2 * Math.PI * e.sineFrequency * e.elapsed
-
-      // 可用摆动幅度 = min(配置幅度, 到左右边界最近的那一侧的距离)
-      const room = Math.min(
-        e.spawnX - GameConfig.BOUND_MIN_X,
-        GameConfig.BOUND_MAX_X - e.spawnX,
-      )
-      const amplitude = Math.min(e.sineAmplitude, Math.max(0, room))
-
-      return {
-        x: e.spawnX + amplitude * Math.sin(phase),
-        y: p.y - step,
-      }
-    },
-
-    /**
-     * 悬停：正常下坠，降到 hoverY 后【停住】不再下落；
-     * 未配 hoverY 时退化为直线穿屏（配置表约定：省略 = 不悬停）。
-     *
-     * 语义 = "降到 hoverY 就停"，不是"最多降到 hoverY"——
-     * 所以出生点若已在 hoverY 之下，会直接原地悬停，不会上浮。
-     * ⚠️ 停下后不再出界，只有被击杀或撞机才会消失。
-     */
-    [EnemyMovePattern.Hover]: (e, step) => {
-      const p = e.node.position
-      const y = p.y - step
-      if (e.hoverY === null) return { x: p.x, y }
-      return { x: p.x, y: Math.max(y, e.hoverY) }
-    },
-  }
 
   /**
    * 统一的自我回收入口。
@@ -287,7 +248,7 @@ export class Enemy extends Component {
       eventBus.emit('player_hit', {
         enemyNode: selfCollider.node,
         playerNode: otherCollider.node,
-        damage: this.collideDamage
+        damage: this.damage
       })
 
       // 在碰撞回调中回收节点不安全，推迟到下一帧（见对象池设计说明）

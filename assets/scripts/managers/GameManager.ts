@@ -120,7 +120,7 @@ export class GameManager {
 
   /**
    * 玩家被敌机撞击：扣血并判定游戏结束。
-   * 扣血量取自 GameConfig.COLLIDE_DAMAGE_PLAYER，
+   * 扣血量由事件载荷 data.damage 携带（= 敌机的 damage，写在敌机配置里），
    * 生命归零则切到 OVER 结算状态。
    */
   private onPlayerHit(data: { enemyNode?: Component, playerNode?: Component, damage: number }): void {

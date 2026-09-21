@@ -10,7 +10,8 @@ import { eventBus } from '../core/EventBus'
 import { StateChangePayload, GameState } from '../data/GameState'
 import { Enemy } from '../entities/Enemy'
 import { poolManager } from '../core/PoolManager'
-import { ENEMY_CONFIGS, EnemyMovePattern } from '../data/config/EnemyConfig'
+import { type EnemyConfig } from '../data/enemies/EnemyConfig'
+import { ENEMY_REGISTRY } from '../data/enemies/EnemyRegistry'
 const { ccclass, property } = _decorator
 
 /**
@@ -24,16 +25,28 @@ const { ccclass, property } = _decorator
  */
 @ccclass('EnemyManager')
 export class EnemyManager extends Component {
-  /** 敌机预制体数组 */
-  @property([Prefab])
-  enemyPrefabList: Prefab[] | [] = []
-
   /** 生成间隔（秒）：每隔多少秒生成一架 */
   @property
   spawnInterval = 1
 
   /** 累计生成计时 */
   private timer = 0
+
+  /**
+   * 共享敌机 prefab（三种敌机合并为 1 个，外观靠运行时换 SpriteFrame）。
+   * 【在编辑器里拖入本字段】，不走 resources.load —— 它小且稳定，
+   * 属"@property 更合适"的情形（大资源 / 热更才用 resources.load）。
+   *
+   * 【为什么由本类持有，而不是 EnemyRegistry】
+   *   这是「生成模板」，属于生成器（本类）的职责，不是「实体使用的资源」。
+   *   EnemyRegistry 只缓存每类敌机的外观资源（机身图），与 ShipRegistry 严格对称
+   *   （ShipRegistry 也绝不持有玩家的 body prefab）。节点生成模板归 spawner 自己持有，
+   *   正如 BulletManager 从不拥有子弹 prefab、只接收调用方传入的那一棵。
+   *
+   * ⚠️ 漏拖会让 update 首行守卫直接拦下，一架敌机都不生成；start() 会打一条 error 提醒。
+   */
+  @property(Prefab)
+  enemyPrefab: Prefab | null = null
 
   /** 是否处于暂停（冻结）状态；启动时为 true（停在菜单，不生成） */
   private isPaused = true
@@ -55,13 +68,25 @@ export class EnemyManager extends Component {
   private enemyList: Node[] = []
 
   /**
-   * 生成权重表：索引与 ENEMY_CONFIGS 的 prefabIndex 一一对应，
-   * 即 0=普通机 / 1=精英机 / 2=BOSS，权重比 6 : 3 : 1。
-   *
-   * 放在这里而非 EnemyConfig："出哪种、多常出"属于【难度节奏】，
-   * 将来会整体搬去 WaveManager，敌机配置表只该留"这一种敌机是什么样"。
+   * 出生权重（临时，等 WaveManager 时迁走）。
+   * 用 id 做 key 的 Record，避免与 ENEMY_CONFIGS 顺序对齐的下标错位隐患。
    */
-  private static readonly SPAWN_WEIGHTS = [6, 3, 1]
+  private static readonly SPAWN_WEIGHTS: Record<string, number> = {
+    e_normal: 6,
+    e_elite: 3,
+    e_boss: 1,
+  }
+
+  /**
+   * 启动校验：共享敌机 prefab 现由编辑器拖入，若漏拖则打一条 error。
+   * 漏拖时 update 首行的守卫会让生成静默停摆，这里提前给出可读提示，便于排查。
+   * （纯同步检查、无异步，因此不再需要 async。）
+   */
+  protected start(): void {
+    if (!this.enemyPrefab) {
+      console.error('[EnemyManager] 未在编辑器拖入 enemyPrefab，敌机将不会生成')
+    }
+  }
 
   /**
    * 订阅跟随【激活状态】，与 onDisable 严格对称（统一走默认模式，不再用常驻例外）。
@@ -115,7 +140,8 @@ export class EnemyManager extends Component {
   }
 
   update(deltaTime: number): void {
-    if (!this.enemyPrefabList.length) return
+    // 编辑器漏拖 prefab 时不生成（start() 已打 error 提醒）
+    if (!this.enemyPrefab) return
     if (this.isPaused) return
 
     this.timer += deltaTime
@@ -126,50 +152,45 @@ export class EnemyManager extends Component {
   }
 
   /**
-   * 按权重随机抽一种敌机，返回它在 ENEMY_CONFIGS 中的下标。
+   * 按权重随机抽一种敌机，返回对应的配置。
    *
-   * 累加区间法：把权重首尾相接铺成 [0, total) 上的若干段，随机点落在哪段就取哪个。
-   * 返回【下标】而非 cfg，是因为下标同时还能索引 prefab 数组 ——
-   * 让"选数值"与"选预制体"天然保持一致，不会出现数值是精英机、外观是普通机的错配。
+   * 累加区间法：把各 cfg 的 SPAWN_WEIGHTS[id] 首尾相接铺成 [0, total) 上的若干段，
+   * 随机点落在哪段就取哪个 cfg。权重用 id 做 key 的 Record（SPAWN_WEIGHTS），
+   * 不再与 ENEMY_REGISTRY 顺序对齐，不存在"下标错位"隐患；缺省权重回落 1。
    */
-  private rollEnemyIndex(): number {
-    const weights = EnemyManager.SPAWN_WEIGHTS
+  private rollEnemyConfig(): EnemyConfig {
     let total = 0
-    for (const w of weights) total += w
-    if (total <= 0) return 0
+    for (const c of ENEMY_REGISTRY) total += EnemyManager.SPAWN_WEIGHTS[c.id] ?? 1
+    if (total <= 0) return ENEMY_REGISTRY[0]
 
     let roll = Math.random() * total
-    for (let i = 0; i < weights.length; i++) {
-      roll -= weights[i]
-      if (roll < 0) return i
+    for (const c of ENEMY_REGISTRY) {
+      roll -= EnemyManager.SPAWN_WEIGHTS[c.id] ?? 1
+      if (roll < 0) return c
     }
     // 兜底：浮点误差导致未命中任何区间时，取最后一个
-    return weights.length - 1
+    return ENEMY_REGISTRY[ENEMY_REGISTRY.length - 1]
   }
 
   /** 在屏幕上方随机横向位置生成一架敌机 */
   private spawnEnemy(): void {
-    // ① 抽签：按权重决定这一架是哪一种（同时定下数值与外观）
-    const index = this.rollEnemyIndex()
-    const cfg = ENEMY_CONFIGS[index]
+    // ① 抽签：按权重决定这一架是哪一种（数值 + 外观一并定下）
+    const cfg = this.rollEnemyConfig()
     if (!cfg) return
 
-    // ② 按下标取对应预制体（两个数组顺序必须对齐）
-    const prefab = this.enemyPrefabList[index] ?? this.enemyPrefabList[0]
-    if (!prefab) {
-      console.warn(`[EnemyManager] prefabIndex ${index} 越界，且数组为空`)
-      return
-    }
+    // ② 取共享的单一敌机 prefab（三种敌机合并为 1 个，外观靠运行时换 SpriteFrame）
+    const prefab = this.enemyPrefab
+    if (!prefab) return
 
-    // ③ 根据预制体【从对象池借出】敌机结点（池空才新建），统一挂到容器下
+    // ③ 根据 prefab【从对象池借出】敌机结点（池空才新建），统一挂到容器下
     const enemy = poolManager.acquire(prefab, this.enemyContainer ?? this.node)
     if (!enemy) return
 
     // 出生位置：x 随机在玩家横向范围内，y 固定在屏幕上方界外（从屏外滑入）
     //
-    // ⚠️ 悬停机（Hover）例外：它不会穿屏，会停在那儿 —— 随机 x 会让 BOSS
-    //    永久歪在屏幕一侧。按 EnemyConfig 的约定，这类敌机一律【居中对齐】。
-    const spawnX = cfg.movePattern === EnemyMovePattern.Hover
+    // ⚠️ 居中对齐的敌机（如 BOSS，配置里 spawnCentered=true）例外：它不会穿屏，
+    //    随机 x 会让它永久歪在屏幕一侧，所以一律取屏幕中心 x=0。
+    const spawnX = cfg.spawnCentered
       ? 0
       : math.randomRange(GameConfig.BOUND_MIN_X, GameConfig.BOUND_MAX_X)
 

@@ -29,7 +29,7 @@ export class ShipSelectView extends Component {
   @property(Sprite)
   previewSprite: Sprite | null = null
 
-  /** 机型名称（显示 SHIP_CONFIGS[].name） */
+  /** 机型名称（显示 SHIP_REGISTRY[].name） */
   @property(Label)
   nameLabel: Label | null = null
 

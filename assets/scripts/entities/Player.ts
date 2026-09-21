@@ -59,16 +59,6 @@ export class Player extends Component {
   @property(Node)
   beamLayer: Node | null = null
 
-  /**
-   * 机身 Sprite（换机型 / 升火力换外观时改它的 spriteFrame）。
-   *
-   * **不用在 Inspector 里拖引用也能工作**：Player 节点自身就挂了一个 Sprite 组件，
-   * 若这里没拖（为 null），`applyAppearance` 会自动回退到 `getComponent(Sprite)`，
-   * 换机型 / 升火力一定看得到贴图变化。显式拖了某个 Sprite 就以拖的为准（回退逻辑跳过）。
-   */
-  @property(Sprite)
-  shipSprite: Sprite | null = null
-
   /** 当前机型配置；缓存下来，避免每帧查表 */
   private ship: ShipConfig = getShipOr(playerData.getSnapshot().shipId)
 
@@ -208,11 +198,16 @@ export class Player extends Component {
    *    绝不往 PlayerData 里加 spriteIndex —— 那就是又一个"双源"。
    */
   private applyAppearance(data: Readonly<IPlayerData>): void {
-    // 没在 Inspector 拖 shipSprite 时，回退到 Player 节点自身的 Sprite 组件
-    // （机身图就挂在这个节点上）。这样换机型 / 升火力一定看得到贴图变化，
-    // 不必手动拖引用；显式拖了某个 Sprite 时 this.shipSprite 非 null，这步跳过。
-    if (!this.shipSprite) this.shipSprite = this.getComponent(Sprite)
-    if (!this.shipSprite) return
+    // 体型：随火力等级【略微变大】—— 基础 scale + 每级增量。
+    // 与外观解耦：外观按 stage 变（避免每帧重设 spriteFrame），体型按 level 变（每级都生效）。
+    const sizeScale = this.ship.scale + (data.weaponLevel - 1) * this.ship.scalePerLevel
+    this.node.setScale(sizeScale, sizeScale, 1)
+
+    // 机身 Sprite 直接取 Player 节点自身的 Sprite 组件（机身图就挂在这个节点上），
+    // 不靠 Inspector 拖引用：旧 shipSprite @property 已删 —— prefab 里该字段始终为 null，
+    // 实际一直走这条 getComponent 回退，纯冗余。删后换机型 / 升火力一样看得到贴图变化。
+    const sprite = this.getComponent(Sprite)
+    if (!sprite) return
 
     const stage = stageOfLevel(data.weaponLevel)
     if (stage === this.appliedStage) return
@@ -221,7 +216,7 @@ export class Player extends Component {
     // 该档没图（内容待补）→ 保留当前外观，不要把飞机变成空白
     if (!frame) return
 
-    this.shipSprite.spriteFrame = frame
+    sprite.spriteFrame = frame
     this.appliedStage = stage
   }
 

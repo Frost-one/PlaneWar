@@ -521,21 +521,11 @@
     },
     "_enabled": true,
     "__prefab": null,
-    "enemyPrefabList": [
-      {
-        "__uuid__": "4607c884-19fa-4970-a9cb-d5a28ece1387",
-        "__expectedType__": "cc.Prefab"
-      },
-      {
-        "__uuid__": "12be8706-f3b0-438f-985f-e8cd5c1c6185",
-        "__expectedType__": "cc.Prefab"
-      },
-      {
-        "__uuid__": "70af7da9-a8c9-4626-86b0-95ea6c46813e",
-        "__expectedType__": "cc.Prefab"
-      }
-    ],
     "spawnInterval": 1,
+    "enemyPrefab": {
+      "__uuid__": "3b0c83df-be3c-465f-b90a-61479ac3f7a3",
+      "__expectedType__": "cc.Prefab"
+    },
     "enemyContainer": {
       "__id__": 9
     },

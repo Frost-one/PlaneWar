@@ -76,6 +76,15 @@ export interface ShipConfig {
   readonly speed: number
 
   /**
+   * 基础体型缩放（1 = 原始大小）。
+   * 升级后体型随火力等级【略微变大】：实际缩放 = scale + (weaponLevel-1) · scalePerLevel。
+   * 放在机型配置里（而非 Player），是因为"多大"是机型属性，将来不同机型可配不同成长。
+   */
+  readonly scale: number
+  /** 每升 1 级体型增量（"略微变大"的来源）。设为 0 则该机型升级不变大 */
+  readonly scalePerLevel: number
+
+  /**
    * 开火装配：这架飞机有哪些发射器【同时】工作。
    *
    * 这就是方案 C（发射器组合）的全部形态 —— **组合只是个数组**。

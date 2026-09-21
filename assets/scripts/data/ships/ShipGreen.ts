@@ -24,6 +24,8 @@ export const SHIP_GREEN: ShipConfig = {
   name: '苍岩',
   maxHp: 160,
   speed: 360,
+  scale: 3,
+  scalePerLevel: 0.05,
   fireStyleName: '贯穿',
   emitters: [new LaneEmitter('main', LEVELS)],
 

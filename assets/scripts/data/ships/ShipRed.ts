@@ -26,6 +26,8 @@ export const SHIP_RED: ShipConfig = {
   name: '赤焰',
   maxHp: 120,
   speed: 420,
+  scale: 3,
+  scalePerLevel: 0.3,
   fireStyleName: '散射',
 
   // 资源：与数值同处一个文件，改这架飞机只看这里

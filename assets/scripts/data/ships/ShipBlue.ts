@@ -26,6 +26,8 @@ export const SHIP_BLUE: ShipConfig = {
   name: '湛影',
   maxHp: 100,
   speed: 480,
+  scale: 3,
+  scalePerLevel: 0.05,
   fireStyleName: '激光',
   emitters: [new BeamEmitter('beam', LEVELS)],
 
