@@ -124,7 +124,7 @@ export class BeamEmitter implements Emitter {
     if (!ctx.beamLayer) {
       if (!this.layerWarned) {
         this.layerWarned = true
-        console.warn(`[BeamEmitter] ${this.id} 没有挂载层（beamLayer 未拖），激光不会显示`)
+        console.warn('【Player】 beamLayer没拖')
       }
       return false
     }

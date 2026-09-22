@@ -10,6 +10,7 @@ import { GameConfig } from '../data/config/GameConfig'
 import { eventBus } from '../core/EventBus'
 import { StateChangePayload, GameState } from '../data/GameState'
 import { WFCGenerator, type WFCTile } from '../core/WFCGenerator'
+import { validateRequiredProps } from '../core/utils/validate'
 const { ccclass, property } = _decorator
 
 // ==================== 瓦片 id 约定 ====================
@@ -211,6 +212,13 @@ export class MapManager extends Component {
    * 这是 onLoad 该做的事 —— 同步、无 await、不依赖其他组件的 start。
    */
   protected onLoad(): void {
+    // 三组贴图是必填的：缺了整张地图都是空白，且不报错 —— 启动即抛异常。
+    // 数组属性连空数组也算缺失（validateRequiredProps 内部对 [] 单独判了）。
+    validateRequiredProps('MapManager', {
+      waterFrame: this.waterFrame,
+      grassFrames: this.grassFrames,
+      sandFrames: this.sandFrames,
+    })
     this.build()
   }
 

@@ -2,6 +2,7 @@ import { _decorator, Component, Node, Prefab, instantiate } from 'cc'
 import { eventBus } from '../core/EventBus'
 import { StateChangePayload, GameResult, GameState } from '../data/GameState'
 import { gameManager } from './GameManager'
+import { validateRequiredProps } from '../core/utils/validate'
 const { ccclass, property } = _decorator
 
 /**
@@ -33,6 +34,23 @@ export class UIManager extends Component {
   private gameResult: Node | null = null
 
   /**
+   * 8 个引用全是必填：漏一个 Panel 就整个不出现，且不会报错 —— 所以启动即抛异常。
+   * 放在 onLoad 而不是 start：start 里要 instantiate 面板，得先确认引用齐全。
+   */
+  protected onLoad(): void {
+    validateRequiredProps('UIManager', {
+      menuLayer: this.menuLayer,
+      gamePausePanel: this.gamePausePanel,
+      HUDLayer: this.HUDLayer,
+      gameResultPanel: this.gameResultPanel,
+      menuPrefab: this.menuPrefab,
+      gamePausePrefab: this.gamePausePrefab,
+      HUDPrefab: this.HUDPrefab,
+      gameResultPrefab: this.gameResultPrefab,
+    })
+  }
+
+  /**
    * 订阅跟随【激活状态】，与 onDisable 严格对称（统一走默认模式，不再用常驻例外）。
    * 本组件挂在常驻节点上、全程不失活，onDisable 实际不会被调用，
    * 但保持 onEnable/onDisable 配对能与实体/UI 组件完全一致，也避免将来若节点被停用却忘了退订。
@@ -54,10 +72,7 @@ export class UIManager extends Component {
     this.menu = this.createPanel(this.menuPrefab, this.menuLayer)
     this.gamePause = this.createPanel(this.gamePausePrefab, this.gamePausePanel)
     this.hud = this.createPanel(this.HUDPrefab, this.HUDLayer)
-    this.gameResult = this.createPanel(
-      this.gameResultPrefab,
-      this.gameResultPanel,
-    )
+    this.gameResult = this.createPanel(this.gameResultPrefab, this.gameResultPanel)
 
     // 依据当前状态做一次初始显隐（避免启动时状态已是某值却未收到广播）
     this.onStateChange(gameManager.getStateSnapshot())
@@ -69,12 +84,14 @@ export class UIManager extends Component {
   }
 
   /**
-   * 实例化一个 UI Prefab 并挂到指定 Layer 下，默认隐藏
-   * @returns 实例节点；prefab 或 layer 缺失时返回 null
+   * 实例化一个 UI Prefab 并挂到指定 Layer 下，默认隐藏。
+   * 引用必填已在 onLoad 校验过，这里不再判空。
+   *
+   * @param prefab 面板预制体
+   * @param layer  挂载父节点
+   * @returns 实例节点
    */
-  private createPanel(prefab: Prefab | null, layer: Node | null): Node | null {
-    if (!prefab || !layer) return null
-
+  private createPanel(prefab: Prefab, layer: Node): Node {
     const node = instantiate(prefab)
     node.parent = layer
     node.active = false

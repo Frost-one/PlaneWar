@@ -3,7 +3,7 @@ import { type EnemyConfig } from './EnemyConfig'
 /**
  * 精英机：正弦横摆、血量厚、掉落率高。
  *
- * 【数值校准】锚点 = 玩家 lv3 火力（~110 dps），目标击杀 ~2.5s → maxHp 260。
+ * 【数值校准】锚点 = 玩家 lv2（中期，~110 dps），目标击杀 ~2.5s → maxHp 260。
  * 详见 EnemyConfig.ts 顶部"TTK 倒推"说明。
  */
 export const ENEMY_ELITE: EnemyConfig = {

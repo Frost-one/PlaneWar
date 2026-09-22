@@ -66,49 +66,32 @@ export function isShipAssetsLoaded(): boolean {
 }
 
 /**
- * 【火力档 → 外观档】的对齐表。
+ * 取某架飞机在指定外观档下的贴图 —— 【档 → 图】的唯一入口（Player / 选机界面都走这里）。
  *
- * 为什么要这张表、而不是直接 `sprites[fireLevel - 1]`：
- *   两个东西的数量【本来就不一样】—— 火力有 5 档（数值爽感要细），
- *   外观只有 3 张图（美术成本要省）。用 min(火力, 外观) 硬凑会得到
- *   "第 4 档没图"或"第 1 档就换图"这类偏差，且每一处消费点都要各自处理。
+ * 【外观档 = 火力等级 - 1】
+ *   现在火力 3 档、机身图 3 张，两者 1:1，所以调用方直接传 `weaponLevel - 1` 即可，
+ *   中间不需要任何映射：恒等映射不承载决策，只是一层空转
+ *   （本项目判据：说不出它当下挡住什么成本，就删掉这层）。
  *
- * 把它收成【一个显式映射】的好处：
- *   - 改对齐关系只改这一处（想 1:1 就写成 [0,1,2,3,4]）；
- *   - 越界自动取最后一档，新增火力档不用回来补表（`?? 最后一项` 兜底）；
- *   - 表是【推导不出来的设计决策】，必须写下来，不能靠约定。
- *
- * 索引 = 火力等级 - 1；值 = 外观档（即 sprites 的下标）。
- */
-const STAGE_OF_LEVEL: readonly number[] = [0, 0, 1, 1, 2]
-
-/**
- * 火力等级 → 外观档（sprites 下标）。
- *
- * 各处（Player / 选机预览 / 将来的皮肤）都走这个函数，
- * 保证"同样 3 档火力"在任何界面都长一样。
- */
-export function stageOfLevel(weaponLevel: number): number {
-  const i = Math.max(1, Math.floor(weaponLevel)) - 1
-  return STAGE_OF_LEVEL[i] ?? STAGE_OF_LEVEL[STAGE_OF_LEVEL.length - 1]
-}
-
-/**
- * 取某架飞机在指定外观档下的贴图。
+ * ⚠️ 若将来【火力档数 ≠ 贴图张数】（美术出图跟不上加档位速度），就在本函数开头做一次
+ *   查表映射（越界顶到最后一档）—— 到那时它是真实需求，不是今天的假想。只改这一处即可。
  *
  * 【为什么要"向上回退"】外观档是稀疏的：可能只配了 1 张（单图机型），
  *   也可能第 2 张路径写错没加载出来。这时**宁可沿用上一张图**，
  *   也不要返回 null 让飞机变空白 —— 缺图是内容问题，不该让游戏崩掉表现。
  *
  * @param id         机型 id
- * @param stage      外观档（sprites 下标）；省略 = 0（第 1 档，永远存在）
+ * @param stage      外观档（= 火力等级 - 1）；省略 = 0（第 1 档，永远存在）
  */
 export function getShipSprite(id: string, stage = 0): SpriteFrame | null {
   const sprites = assetCache.get(id)?.sprites
   if (!sprites || sprites.length === 0) return null
 
-  // 从目标档往前找第一张非空的图（含 stage=0 自己）
-  for (let i = Math.min(stage, sprites.length - 1); i >= 0; i--) {
+  // 上下限都在这里夹：超出张数顶到最后一张，负数（等级异常）夹回第 1 档
+  const clamped = Math.min(Math.max(0, Math.floor(stage)), sprites.length - 1)
+
+  // 从目标档往前找第一张非空的图（含 clamped 自己）
+  for (let i = clamped; i >= 0; i--) {
     const frame = sprites[i]
     if (frame) return frame
   }

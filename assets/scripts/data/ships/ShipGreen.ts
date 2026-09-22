@@ -10,13 +10,19 @@ import type { ShipConfig } from './ShipConfig'
  *   苍岩：spreadAngle = 0、laneWidth > 0 → 多条平行弹道 + 穿透
  * 所以"共用发射器"和"数值写在各自飞船文件里"并不冲突：
  *   共享的是【算法】，不共享的是【数值】。
+ *
+ * 【3 档火力，与 3 张贴图 1:1】（每升一级换一张图）
+ *
+ * 【数值怎么来的】取原 5 档里的第 1 / 3 / 5 档做基底，中间档略作收敛：
+ *   lv1 25 伤 单弹 不穿透  → 保留，开局手感不变（~78 dps）
+ *   lv2 36 伤 2 弹 穿 1    → 弹道间距 32，开始有"一条线扫过去"的感觉（~120 dps）
+ *   lv3 52 伤 3 弹 穿 3    → 满级 ≈ 旧 lv5（~185 dps）
+ * 每级跨度约 +55%，比原来 5 档的 +20% 更有升级感。
  */
 const LEVELS: readonly LaneLevel[] = [
   { damage: 25, interval: 0.32, speed: 900, pierce: 0, count: 1 },
-  { damage: 30, interval: 0.31, speed: 910, pierce: 1, count: 2, laneWidth: 24 },
-  { damage: 36, interval: 0.3, speed: 920, pierce: 2, count: 3, laneWidth: 48 },
-  { damage: 43, interval: 0.29, speed: 930, pierce: 3, count: 3, laneWidth: 64 },
-  { damage: 52, interval: 0.28, speed: 940, pierce: 4, count: 3, laneWidth: 80 },
+  { damage: 36, interval: 0.3, speed: 920, pierce: 1, count: 2, laneWidth: 32 },
+  { damage: 52, interval: 0.28, speed: 940, pierce: 3, count: 3, laneWidth: 64 },
 ]
 
 export const SHIP_GREEN: ShipConfig = {
@@ -25,15 +31,14 @@ export const SHIP_GREEN: ShipConfig = {
   maxHp: 160,
   speed: 360,
   scale: 3,
-  scalePerLevel: 0.05,
+  scalePerLevel: 0.1,
   fireStyleName: '贯穿',
   emitters: [new LaneEmitter('main', LEVELS)],
 
   // 资源：与数值同处一个文件
   assetPaths: {
-    // ⚠️ 这里是【占位路径】：苍岩的三张外观图还没放进 resources/，
-    //    加载会失败但不会卡住启动（第 0 档缺图 → 整架跳过 + 打 error）。
-    //    补图时只需把文件放进去、路径对上，代码一行都不用改。
+    // 第 1/2/3 级各一张图，与火力 1:1（取图统一走 getShipSprite(id, 火力等级 - 1)）。
+    // ⚠️ 取 SpriteFrame 必须带 `/spriteFrame` 子资源后缀，漏了会加载失败。
     sprites: [
       'ships/ship_green/sprite_level_1/spriteFrame',
       'ships/ship_green/sprite_level_2/spriteFrame',

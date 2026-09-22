@@ -46,7 +46,7 @@ export interface FireContext {
   /** 出生点 y */
   readonly y: number
   /** 子弹工厂（玩家的或敌方的），由持有者注入 */
-  readonly bullets: BulletManager | null
+  readonly bulletManager: BulletManager | null
 
   /**
    * 本次开火要用哪种子弹 prefab（由持有者从机型资源注入）。
@@ -71,7 +71,7 @@ export interface FireContext {
  * 开火修饰量 —— 飞船升级（局外成长）唯一的注入方式。
  *
  * ⚠️ 只放"乘区"，不放基值：基值永远是配置表里的那个数。
- *    否则 3 机型 × 5 飞船级 × 5 火力档 = 75 份数值，改一个基值要改 75 处。
+ *    否则 3 机型 × 5 飞船级 × 3 火力档 = 45 份数值，改一个基值要改 45 处。
  */
 export interface FireMods {
   /** 射速乘区：1 = 原速，1.2 = 快 20%（作用于 interval） */

@@ -12,12 +12,13 @@ import { Enemy } from '../entities/Enemy'
 import { poolManager } from '../core/PoolManager'
 import { type EnemyConfig } from '../data/enemies/EnemyConfig'
 import { ENEMY_REGISTRY } from '../data/enemies/EnemyRegistry'
+import { validateRequiredProps } from '../core/utils/validate'
 const { ccclass, property } = _decorator
 
 /**
  * 敌机生成管理器（挂在场景中的一个节点上）
  * - 按固定间隔在屏幕上方随机横向位置生成敌机
- * - 敌机统一挂到 enemyContainer（专用容器 Enemies）下，便于整体清场
+ * - 敌机统一挂到【本组件所在节点】下，便于整体清场（本组件请挂在专用容器上）
  * - 仅在 PLAYING 状态下生成；菜单/暂停/结算时暂停生成
  *
  * 职责边界：本类只负责【生成】与【回收】敌机（节点来自对象池 poolManager，按 prefab 复用），
@@ -52,16 +53,6 @@ export class EnemyManager extends Component {
   private isPaused = true
 
   /**
-   * 敌机专用容器节点（建议拖入 GameRoot/Enemies）。
-   * 该节点下应仅存放敌机，以便清场时安全地整体清理。
-   *
-   * 留空时默认使用本组件所在节点 —— 适合直接把本组件挂在容器节点上的用法
-   * （此时连引用都不用拖）。
-   */
-  @property(Node)
-  enemyContainer: Node | null = null
-
-  /**
    * 当前存活的敌机列表。
    * 仅用于追踪与统一回收；实际节点来自 poolManager（按 prefab 复用），不再每次 instantiate。
    */
@@ -78,14 +69,12 @@ export class EnemyManager extends Component {
   }
 
   /**
-   * 启动校验：共享敌机 prefab 现由编辑器拖入，若漏拖则打一条 error。
-   * 漏拖时 update 首行的守卫会让生成静默停摆，这里提前给出可读提示，便于排查。
-   * （纯同步检查、无异步，因此不再需要 async。）
+   * 启动校验：共享敌机 prefab 现由编辑器拖入，漏了直接抛异常。
+   * 漏拖时 update 首行的守卫会让生成静默停摆（一架敌机都不出来，且不报错），
+   * 这里提前崩掉，省得从"为什么没敌机"反推。
    */
-  protected start(): void {
-    if (!this.enemyPrefab) {
-      console.error('[EnemyManager] 未在编辑器拖入 enemyPrefab，敌机将不会生成')
-    }
+  protected onLoad(): void {
+    validateRequiredProps('EnemyManager', { enemyPrefab: this.enemyPrefab })
   }
 
   /**
@@ -140,8 +129,6 @@ export class EnemyManager extends Component {
   }
 
   update(deltaTime: number): void {
-    // 编辑器漏拖 prefab 时不生成（start() 已打 error 提醒）
-    if (!this.enemyPrefab) return
     if (this.isPaused) return
 
     this.timer += deltaTime
@@ -182,8 +169,9 @@ export class EnemyManager extends Component {
     const prefab = this.enemyPrefab
     if (!prefab) return
 
-    // ③ 根据 prefab【从对象池借出】敌机结点（池空才新建），统一挂到容器下
-    const enemy = poolManager.acquire(prefab, this.enemyContainer ?? this.node)
+    // ③ 根据 prefab【从对象池借出】敌机结点（池空才新建），统一挂到本组件所在节点下
+    //    （本组件就该挂在专用容器上，场景里是 GameRoot/Enemies）
+    const enemy = poolManager.acquire(prefab, this.node)
     if (!enemy) return
 
     // 出生位置：x 随机在玩家横向范围内，y 固定在屏幕上方界外（从屏外滑入）

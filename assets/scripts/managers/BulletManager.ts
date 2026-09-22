@@ -9,7 +9,7 @@ const { ccclass, property } = _decorator
 /**
  * 子弹管理器
  * - 统一负责子弹的【生成】与【回收】（节点来自对象池 poolManager，按 prefab 复用）
- * - 子弹统一挂到专用容器 bulletContainer 下，便于整体清场
+ * - 子弹统一挂到【本组件所在节点】下，便于整体清场（本组件请挂在专用容器上）
  * - 状态迁移时按「时间停止」语义决定是否清场（与 EnemyManager 规则一致）
  *
  * 职责边界：只管生成与回收，不干涉子弹自身的移动与碰撞（那是 Bullet 组件的事）。
@@ -22,20 +22,10 @@ const { ccclass, property } = _decorator
 @ccclass('BulletManager')
 export class BulletManager extends Component {
   /**
-   * 子弹专用容器节点（建议拖入 GameRoot/Bullets）。
-   * 该节点下应仅存放子弹，便于清场时安全地整体清理。
-   *
-   * 留空时默认使用本组件所在节点 —— 适合直接把本组件挂在容器节点上的用法
-   * （此时连引用都不用拖）。
-   */
-  @property(Node)
-  bulletContainer: Node | null = null
-
-  /**
    * 当前存活的子弹列表。
    * 仅用于追踪与统一回收；实际节点来自 poolManager（按 prefab 复用），不再每次 instantiate。
    */
-  private bullets: Node[] = []
+  private bulletList: Node[] = []
 
   /**
    * 订阅跟随【激活状态】，与 onDisable 严格对称（统一走默认模式，不再用常驻例外）。
@@ -95,8 +85,13 @@ export class BulletManager extends Component {
   ): Node | null {
     if (!bulletPrefab) return null
 
-    // 未指定容器时退回本组件所在节点
-    const container = this.bulletContainer ?? this.node
+    // 子弹一律挂到【本组件所在节点】下 —— 本组件就该挂在子弹容器上（场景里是 GameRoot/BulletContainer）。
+    //
+    // 为什么不再留 @property container：它是 spawnBullet 里 x/y 的【坐标系基准】
+    // （x/y 是相对容器的局部坐标，来自 Player 的 position）。交给编辑器拖就有可能
+    // 拖成一个父节点不同的节点，结果位置整体偏移 —— 而且不报错，只表现为"子弹莫名歪了"。
+    // 固定成自身节点，坐标系永远与组件一致，这条坑从结构上消失。
+    const container = this.node
 
     // 优先从对象池借出节点（池空才新建），而非每次 instantiate
     const bullet = poolManager.acquire(bulletPrefab, container)
@@ -110,7 +105,7 @@ export class BulletManager extends Component {
     if (bulletComp) bulletComp.init(this, params, bulletPrefab)
 
     // 纳入追踪列表，供后续统一回收
-    this.bullets.push(bullet)
+    this.bulletList.push(bullet)
     return bullet
   }
 
@@ -137,14 +132,14 @@ export class BulletManager extends Component {
    */
   private clearBullets(): void {
     // 拷贝一份再遍历：releaseBullet 会修改原数组
-    const list = this.bullets.slice()
+    const list = this.bulletList.slice()
     for (const bullet of list) {
       // 走 Bullet.despawn()：它持有自己的来源 prefab，能正确还回对应的池
       // （与 EnemyManager 清场时走 Enemy.despawn() 是同一套路）
       bullet.getComponent(Bullet)?.despawn()
     }
     // 保险：清理可能遗漏的无效引用
-    this.bullets.length = 0
+    this.bulletList.length = 0
   }
 
   /**
@@ -154,7 +149,7 @@ export class BulletManager extends Component {
    * @param bullet 要摘除的子弹节点
    */
   private unregisterBullet(bullet: Node): void {
-    const idx = this.bullets.indexOf(bullet)
-    if (idx >= 0) this.bullets.splice(idx, 1)
+    const idx = this.bulletList.indexOf(bullet)
+    if (idx >= 0) this.bulletList.splice(idx, 1)
   }
 }

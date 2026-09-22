@@ -3,7 +3,7 @@ import { type EnemyConfig } from './EnemyConfig'
 /**
  * 普通机：直线下坠，用于构成波次的主体。
  *
- * 【数值校准】锚点 = 玩家 lv1 火力（~45 dps），目标击杀 ~0.4s → maxHp 16。
+ * 【数值校准】锚点 = 玩家 lv1 火力（~60 dps），目标击杀 ~0.3s → maxHp 16。
  * 详见 EnemyConfig.ts 顶部"TTK 倒推"说明。
  *
  * 【为什么数值直接写在这里，而不是另开一个 EnemyStats】

@@ -26,7 +26,8 @@ export interface ShipAssetPath {
    *   写死三个字段等于把"上限 3 档"焊进契约，将来加到 6 档要改接口。
    *
    * ⚠️ **数组长度不必等于火力档数** ——
-   *   3 张图配 5 档火力是常态，对齐关系交给 ShipRegistry 的 STAGE_OF_LEVEL 表，
+   *   现在两者都是 3（1:1，每级一张图），但美术出图通常跟不上升档位速度：
+   *   将来"4 档火力只配 3 张图"时，映射加在 ShipRegistry.getShipSprite 里（那是唯一取图入口），
    *   这里只负责"有哪些图"，不负责"哪档用哪张"。
    */
   readonly sprites: readonly string[]

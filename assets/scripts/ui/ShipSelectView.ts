@@ -4,6 +4,7 @@ import { playerData } from '../data/PlayerData'
 import type { IPlayerData } from '../data/PlayerData'
 import { cycleShip, getShip, getShipSprite, isShipAssetsLoaded } from '../data/ships/ShipRegistry'
 import type { ShipConfig } from '../data/ships/ShipConfig'
+import { validateRequiredProps } from '../core/utils/validate'
 const { ccclass, property } = _decorator
 
 /**
@@ -49,6 +50,18 @@ export class ShipSelectView extends Component {
   @property(Button)
   rightButton: Button | null = null
 
+  /** 必填引用一次性校验：漏了直接抛异常，后面的代码可以放心当它非空 */
+  protected onLoad(): void {
+    validateRequiredProps('ShipSelectView', {
+      previewSprite: this.previewSprite,
+      nameLabel: this.nameLabel,
+      weaponLabel: this.weaponLabel,
+      infoLabel: this.infoLabel,
+      leftButton: this.leftButton,
+      rightButton: this.rightButton,
+    })
+  }
+
   /**
    * 订阅与按钮监听一律跟随【激活状态】，与 onDisable 严格对称。
    *
@@ -57,12 +70,8 @@ export class ShipSelectView extends Component {
    *   放在 onLoad 会让隐藏的面板一直挂着订阅（白干活，且逻辑上属于"还在监听一个看不见的界面"）。
    */
   protected onEnable(): void {
-    if (this.leftButton) {
-      this.leftButton.node.on(Button.EventType.CLICK, this.onPrev, this)
-    }
-    if (this.rightButton) {
-      this.rightButton.node.on(Button.EventType.CLICK, this.onNext, this)
-    }
+    this.leftButton.node.on(Button.EventType.CLICK, this.onPrev, this)
+    this.rightButton.node.on(Button.EventType.CLICK, this.onNext, this)
 
     // 玩家数据：别处（存档、默认值、reset）改了机型也能同步刷新
     eventBus.on('player_data_change', this.onPlayerDataChange, this)
@@ -74,12 +83,16 @@ export class ShipSelectView extends Component {
   }
 
   protected onDisable(): void {
-    if (this.leftButton) {
-      this.leftButton.node.off(Button.EventType.CLICK, this.onPrev, this)
-    }
-    if (this.rightButton) {
-      this.rightButton.node.off(Button.EventType.CLICK, this.onNext, this)
-    }
+    this.leftButton.node.off(Button.EventType.CLICK, this.onPrev, this)
+    this.rightButton.node.off(Button.EventType.CLICK, this.onNext, this)
+    eventBus.off('player_data_change', this.onPlayerDataChange, this)
+    eventBus.off('ship_assets_ready', this.onShipAssetsReady, this)
+  }
+
+  protected onDestroy(): void {
+    // 兜底注销（off 幂等），不依赖 onDisable 是否被调用过
+    this.leftButton.node.off(Button.EventType.CLICK, this.onPrev, this)
+    this.rightButton.node.off(Button.EventType.CLICK, this.onNext, this)
     eventBus.off('player_data_change', this.onPlayerDataChange, this)
     eventBus.off('ship_assets_ready', this.onShipAssetsReady, this)
   }
@@ -142,16 +155,14 @@ export class ShipSelectView extends Component {
     // 不区分二者的话，每次进菜单都会先打一条误导性的"资源没放好"警告。
     const frame = getShipSprite(cfg.id)
     if (frame) {
-      if (this.previewSprite) this.previewSprite.spriteFrame = frame
+      this.previewSprite.spriteFrame = frame
     } else if (isShipAssetsLoaded()) {
       console.warn(`[ShipSelectView] 机型贴图未加载：${cfg.id}（检查 assets/resources/ 下是否放了资源）`)
     }
 
-    if (this.nameLabel) this.nameLabel.string = cfg.name
-    if (this.infoLabel) {
-      this.infoLabel.string = `生命 ${cfg.maxHp}　速度 ${cfg.speed}`
-    }
+    this.nameLabel.string = cfg.name
+    this.infoLabel.string = `生命 ${cfg.maxHp}　速度 ${cfg.speed}`
     // 开火风格：机型自己声明的显示名（各机型的弹道数值已下沉到飞船文件，这里只读名字）
-    if (this.weaponLabel) this.weaponLabel.string = cfg.fireStyleName
+    this.weaponLabel.string = cfg.fireStyleName
   }
 }

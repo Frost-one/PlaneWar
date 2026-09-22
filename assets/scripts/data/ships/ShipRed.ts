@@ -12,13 +12,22 @@ import type { ShipConfig } from './ShipConfig'
  *
  * 【索引约定】数组下标 = weaponLevel - 1，**数组长度即火力上限**。
  *   想加一档火力就往数组里加一行，别处不用动。
+ *
+ * 【为什么是 3 档，而且和贴图 1:1】
+ *   火力档数 = 外观张数 = 3：每升一级飞机就换个样，升级的反馈最直接。
+ *   代价是单档跨度变大（原 5 档每级约 +15%，现 3 档每级约 +60%），
+ *   手感差异更明显 —— 这正是"上限压到 3"想要的效果：让升级这件事被看见。
+ *
+ * 【数值怎么来的】取原 5 档里的第 1 / 3 / 5 档做基底，再拉开间隔：
+ *   原 lv1 9 伤 7 弹   → 保留，开局手感不变
+ *   原 lv3 13 伤 9 弹  → 提速到 0.27s、扇形加宽到 38°
+ *   原 lv5 17 伤 12 弹 → 提到 18 伤、扇形加宽到 44°
+ *   满级 ≈ 旧 lv5（单目标约 150 dps），敌机按旧锚点校准的 TTK 基本不用动。
  */
 const LEVELS: readonly LaneLevel[] = [
   { damage: 9, interval: 0.3, speed: 1000, count: 7, spreadAngle: 32, pierce: 0 },
-  { damage: 11, interval: 0.3, speed: 1000, count: 8, spreadAngle: 36, pierce: 0 },
-  { damage: 13, interval: 0.28, speed: 1050, count: 9, spreadAngle: 40, pierce: 0 },
-  { damage: 15, interval: 0.26, speed: 1100, count: 10, spreadAngle: 40, pierce: 0 },
-  { damage: 17, interval: 0.24, speed: 1150, count: 12, spreadAngle: 40, pierce: 0 },
+  { damage: 13, interval: 0.27, speed: 1080, count: 9, spreadAngle: 38, pierce: 0 },
+  { damage: 18, interval: 0.24, speed: 1150, count: 12, spreadAngle: 44, pierce: 0 },
 ]
 
 export const SHIP_RED: ShipConfig = {
@@ -27,13 +36,16 @@ export const SHIP_RED: ShipConfig = {
   maxHp: 120,
   speed: 420,
   scale: 3,
-  scalePerLevel: 0.3,
+  // 每升 1 级 +0.1（满级 3 级 → 3.2）。原来是 0.3（满级会到 3.6），
+  // 疑似与其他两艘 0.05 同批写入时手滑 —— 三艘统一 0.1：
+  // 既看得出来变大，又不会让判定框随体型一起肥一圈（STG 里那是纯惩罚）。
+  scalePerLevel: 0.1,
   fireStyleName: '散射',
 
   // 资源：与数值同处一个文件，改这架飞机只看这里
   assetPaths: {
-    // 外观档：数组下标 = 外观档号，与上面的 LEVELS 【同索引但不必等长】——
-    // 5 档火力只配 3 张图，"哪档用哪张"交给 ShipRegistry.STAGE_OF_LEVEL 决定。
+    // 外观档：数组下标 = 外观档号，与火力【1:1】—— 第 1/2/3 级各一张图。
+    // 第 1/2/3 级各一张图，与火力 1:1。将来若档数 > 图数，映射加在 getShipSprite 里即可。
     // ⚠️ 取 SpriteFrame 必须带 `/spriteFrame` 子资源后缀，漏了会加载失败。
     sprites: [
       'ships/ship_red/sprite_level_1/spriteFrame',
@@ -46,7 +58,7 @@ export const SHIP_RED: ShipConfig = {
   },
 
   /**
-   * 装配：一个 LaneEmitter 吃下全部 5 档（扇形铺开：spreadAngle > 0、laneWidth = 0）
+   * 装配：一个 LaneEmitter 吃下全部 3 档（扇形铺开：spreadAngle > 0、laneWidth = 0）
    *
    * 【将来要加僚机长什么样】（先不实现，只是说明扩展点）
    *   emitters: [

@@ -73,8 +73,9 @@ export class LaneEmitter implements Emitter {
     // 未解锁：直接返回，且【不推进冷却】—— 解锁后立刻能开火，不用再等一轮
     if (ctx.fireLevel < this.minLevel) return
 
-    const bullets: BulletManager | null = ctx.bullets
-    if (!bullets) return
+    // ctx.bulletManager 由 Player 注入，且 Player 已在 onLoad 对 bulletManager 做了必填校验
+    // （漏拖直接抛异常），所以这里不再判空
+    const bulletManager: BulletManager = ctx.bulletManager
 
     // 实体弹机型必须带 prefab；激光机型走的是 BeamEmitter，根本不会进这里。
     // 只警告一次：这里是每帧调用，每帧打日志会把控制台刷爆。
@@ -111,7 +112,7 @@ export class LaneEmitter implements Emitter {
       //    否则 count=3 且 spreadAngle=0（三条平行弹道）会被错当成单发
       const t = count <= 1 ? 0 : i / (count - 1) - 0.5
 
-      bullets.spawnBullet(
+      bulletManager.spawnBullet(
         ctx.x,
         ctx.y,
         {

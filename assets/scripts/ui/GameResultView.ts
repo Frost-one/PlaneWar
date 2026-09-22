@@ -3,6 +3,7 @@ import { eventBus } from '../core/EventBus'
 import { playerData } from '../data/PlayerData'
 import { gameManager } from '../managers/GameManager'
 import { StateChangePayload, GameResult, GameState } from '../data/GameState'
+import { validateRequiredProps } from '../core/utils/validate'
 const { ccclass, property } = _decorator
 
 /**
@@ -37,6 +38,16 @@ export class GameResultView extends Component {
   /** "返回菜单"按钮 */
   @property(Button) menuBtn: Button | null = null
 
+  /** 必填引用一次性校验（漏了直接抛异常） */
+  protected onLoad(): void {
+    validateRequiredProps('GameResultView', {
+      titleLabel: this.titleLabel,
+      finalScoreLabel: this.finalScoreLabel,
+      restartBtn: this.restartBtn,
+      menuBtn: this.menuBtn,
+    })
+  }
+
   /**
    * 订阅与按钮监听跟随【激活状态】，与 onDisable 严格对称。
    *
@@ -46,43 +57,23 @@ export class GameResultView extends Component {
     eventBus.on('state_change', this.onStateChange, this)
 
     // 按钮点击：统一转发给 GameManager，由它切换状态
-    if (this.restartBtn) {
-      this.restartBtn.node.on(Button.EventType.CLICK, this.onRestartClick, this)
-    }
-    if (this.menuBtn) {
-      this.menuBtn.node.on(Button.EventType.CLICK, this.onMenuClick, this)
-    }
+    this.restartBtn.node.on(Button.EventType.CLICK, this.onRestartClick, this)
+    this.menuBtn.node.on(Button.EventType.CLICK, this.onMenuClick, this)
   }
 
   protected onDisable(): void {
     eventBus.off('state_change', this.onStateChange, this)
 
-    if (this.restartBtn) {
-      this.restartBtn.node.off(
-        Button.EventType.CLICK,
-        this.onRestartClick,
-        this,
-      )
-    }
-    if (this.menuBtn) {
-      this.menuBtn.node.off(Button.EventType.CLICK, this.onMenuClick, this)
-    }
+    this.restartBtn.node.off(Button.EventType.CLICK, this.onRestartClick, this)
+    this.menuBtn.node.off(Button.EventType.CLICK, this.onMenuClick, this)
   }
 
   protected onDestroy(): void {
     // 兜底注销（off 幂等），不依赖 onDisable 是否被调用过
     eventBus.off('state_change', this.onStateChange, this)
 
-    if (this.restartBtn) {
-      this.restartBtn.node.off(
-        Button.EventType.CLICK,
-        this.onRestartClick,
-        this,
-      )
-    }
-    if (this.menuBtn) {
-      this.menuBtn.node.off(Button.EventType.CLICK, this.onMenuClick, this)
-    }
+    this.restartBtn.node.off(Button.EventType.CLICK, this.onRestartClick, this)
+    this.menuBtn.node.off(Button.EventType.CLICK, this.onMenuClick, this)
   }
 
   /**
@@ -92,13 +83,9 @@ export class GameResultView extends Component {
     // 记录本局结果，供标题文案与后续逻辑使用
     this.result = result
     // 从数据层只读最新分数用于展示
-    if (this.finalScoreLabel) {
-      this.finalScoreLabel.string = `最终得分：${playerData.getSnapshot().score}`
-    }
+    this.finalScoreLabel.string = `最终得分：${playerData.getSnapshot().score}`
     // 标题：按结算结果自动填入（胜利 / 失败）
-    if (this.titleLabel) {
-      this.titleLabel.string = GameResultView.TITLES[this.result]
-    }
+    this.titleLabel.string = GameResultView.TITLES[this.result]
   }
 
   /** 重新开始：交回 GameManager（其内部会重置数据并进入 PLAYING） */

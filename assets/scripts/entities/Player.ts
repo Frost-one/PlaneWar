@@ -13,10 +13,11 @@ import { eventBus } from '../core/EventBus'
 import { StateChangePayload, GameState } from '../data/GameState'
 import { BulletManager } from '../managers/BulletManager'
 import { IPlayerData, playerData } from '../data/PlayerData'
-import { getShipOr, getShipPackageOr, getShipSprite, stageOfLevel } from '../data/ships/ShipRegistry'
+import { getShipOr, getShipPackageOr, getShipSprite } from '../data/ships/ShipRegistry'
 import type { ShipConfig } from '../data/ships/ShipConfig'
 import type { Emitter, FireContext } from './emitters/Emitter'
 import { NO_MODS } from './emitters/Emitter'
+import { validateRequiredProps } from '../core/utils/validate'
 const { ccclass, property } = _decorator
 
 /**
@@ -67,6 +68,17 @@ export class Player extends Component {
 
   /** 当前装配来自哪个机型；**只有换机型才重建装配**，换火力等级不重建 */
   private loadoutKey = ''
+
+  /**
+   * 必填引用一次性校验（漏了直接抛异常）。
+   *
+   * ⚠️ `beamLayer` 不在这里 —— 它是【机型相关】的可空属性：红 / 绿机根本没有激光发射器，
+   *    永远用不到它，做成必填会逼所有机型都拖一个用不到的节点。
+   *    它保持"可空 + 使用处 warn"，等"敌我双方子弹"一并讨论后再定。
+   */
+  protected onLoad(): void {
+    validateRequiredProps('Player', { bulletManager: this.bulletManager })
+  }
 
   /**
    * 输入监听与事件订阅跟随【激活状态】，与 onDisable 严格对称。
@@ -184,10 +196,9 @@ export class Player extends Component {
   /**
    * 按【当前火力等级】换机身外观 —— 升级到一定档位就换个样子。
    *
-   * 【为什么外观档不等于火力档】
-   *   火力有 5 档（数值爽感要细），皮肤只有 3 张（美术成本要省），
-   *   两者的对齐关系是【ShipRegistry.STAGE_OF_LEVEL 这张表】，不在这里算 ——
-   *   否则 Player / 选机界面 / 将来的皮肤系统会各写一份，早晚不一致。
+   * 【外观档怎么来的】火力 3 档 ↔ 机身图 3 张，1:1，所以档号就是 `weaponLevel - 1`。
+   *   夹上下限与"缺图往前回退"都交给 `getShipSprite` —— 它是"档 → 图"的唯一入口，
+   *   本文件不自己算下标，将来档数与图数不等长时也不用改这里。
    *
    * 【为什么记 appliedStage】
    *   本方法挂在 `player_data_change` 上，而**加分 / 扣血也会广播这个事件** ——
@@ -209,7 +220,7 @@ export class Player extends Component {
     const sprite = this.getComponent(Sprite)
     if (!sprite) return
 
-    const stage = stageOfLevel(data.weaponLevel)
+    const stage = Math.max(0, data.weaponLevel - 1)
     if (stage === this.appliedStage) return
 
     const frame = getShipSprite(this.ship.id, stage)
@@ -239,7 +250,7 @@ export class Player extends Component {
       fireLevel,
       x,
       y,
-      bullets: this.bulletManager,
+      bulletManager: this.bulletManager,
       beamLayer: this.beamLayer,
       mods: NO_MODS,
       // 子弹外观来自【当前机型自己的资源】（ShipAsset.bulletPrefab）。
@@ -315,16 +326,18 @@ export class Player extends Component {
   }
 
   /**
-   * ⚠️ 临时调试：数字键 1~5 直接设置火力等级，用来肉眼确认各档的弹道形态。
+   * ⚠️ 临时调试：数字键 1~3 直接设置火力等级，用来肉眼确认各档的弹道形态与机身贴图。
+   * 键位范围跟着火力上限走（现在上限 3 = 发射器 levels.length）。
    * 做完"升级道具（P 道具）"后，请连同 onKeyDown 里的调用一起删掉本方法。
    */
   private handleDebugKey(e: EventKeyboard): void {
+    // 非游玩状态（菜单 / 暂停 / 结算）不响应：否则菜单里按 1~3 会偷偷改火力等级
+    if (this.isPaused) return
+
     const map: Record<number, number> = {
       [KeyCode.DIGIT_1]: 1,
       [KeyCode.DIGIT_2]: 2,
       [KeyCode.DIGIT_3]: 3,
-      [KeyCode.DIGIT_4]: 4,
-      [KeyCode.DIGIT_5]: 5,
     }
     const weaponLevel = map[e.keyCode]
     if (weaponLevel === undefined) return
