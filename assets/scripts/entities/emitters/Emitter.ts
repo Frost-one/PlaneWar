@@ -1,6 +1,6 @@
 // 仅用于类型标注：`import type` 编译后不产生真实 import，避免与 BulletManager 形成循环依赖
 import type { BulletManager } from '../../managers/BulletManager'
-import type { Node, Prefab } from 'cc'
+import type { Prefab } from 'cc'
 
 /**
  * 发射器 —— 开火的最小可组合单元。
@@ -61,8 +61,6 @@ export interface FireContext {
    *   "没有"就用 null 表达，不用塞一个假 prefab。
    */
   readonly bulletPrefab: Prefab | null
-  /** 持续型（激光）的挂载层；发实体弹的发射器用不到 */
-  readonly beamLayer: Node | null
   /** 修饰量：飞船升级 / 道具带来的乘区 */
   readonly mods: FireMods
 }

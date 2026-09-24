@@ -22,10 +22,50 @@ const { ccclass, property } = _decorator
 @ccclass('BulletManager')
 export class BulletManager extends Component {
   /**
+   * 单例引用：由本组件自己在 onLoad 里注册进来。
+   *
+   * 不加 `private constructor` —— 组件必须由引擎构造，加了引擎就 new 不出实例。
+   * 所以它防不住"别人再往场景里挂一个"，只能靠 onLoad 里的重复检查。
+   */
+  private static instance: BulletManager | null = null
+
+  /**
+   * 取子弹管理器 —— 只能在 **start 及以后** 调用。
+   *
+   * 【时序契约（别破坏）】
+   *   注册发生在 BulletManager.onLoad。Cocos 保证【场景里所有组件的 onLoad 全部跑完，
+   *   才开始跑任何一个 start】，所以调用方只要在 start 及以后取用就一定拿得到；
+   *   在自己的 onLoad 里取会拿到 null。
+   *
+   * 未注册时抛异常而不是返回 null：与其在后面某处崩一个看不懂的
+   * "Cannot read property of null"，不如在这里把原因直接说清楚。
+   */
+  public static getInstance(): BulletManager {
+    if (!BulletManager.instance) {
+      throw new Error('[BulletManager] 场景里没有挂载 BulletManager 的节点')
+    }
+    return BulletManager.instance
+  }
+
+  /**
    * 当前存活的子弹列表。
    * 仅用于追踪与统一回收；实际节点来自 poolManager（按 prefab 复用），不再每次 instantiate。
    */
   private bulletList: Node[] = []
+
+  /**
+   * 注册单例。
+   *
+   * 多个实例时是"最后一个注册者赢"，而容器 = 本组件所在节点 ——
+   * 也就是说子弹会静默挂到错的节点下、坐标系整体偏移（不报错，只表现为位置莫名歪了）。
+   * 所以这里直接抛异常逼着清理干净，比留一个静默的位置 bug 好排查得多。
+   */
+  protected onLoad(): void {
+    if (BulletManager.instance && BulletManager.instance !== this) {
+      throw new Error('[BulletManager] 场景里有多个 BulletManager 节点，请只保留一个')
+    }
+    BulletManager.instance = this
+  }
 
   /**
    * 订阅跟随【激活状态】，与 onDisable 严格对称（统一走默认模式，不再用常驻例外）。
@@ -43,6 +83,7 @@ export class BulletManager extends Component {
   protected onDestroy(): void {
     // 兜底注销（off 幂等），不依赖 onDisable 是否被调用过
     eventBus.off('state_change', this.onStateChange, this)
+    if (BulletManager.instance === this) BulletManager.instance = null
   }
 
   /**

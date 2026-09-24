@@ -11,8 +11,8 @@
  *   不是环境错误。程序员错误就该 fail fast —— 带着空引用继续跑只会让崩溃点
  *   远离原因（几秒后在别处抛 Cannot read properties of null）。
  *
- * ⚠️ 本函数只管【必填】属性。可空有回退的属性（如 Player.beamLayer）
- *    不要放进这里 —— 它们在使用处自己 warn，因为回退逻辑也在那里。
+ * ⚠️ 本函数只管【必填】的 @property。非 @property 的运行时依赖（如模块级单例）不用它，
+ *    那些由各自的取用入口（如 BulletManager.getInstance）自己保证。
  *
  * 【为什么不用 cc 自带的 assert】
  *   Cocos 的 assert 逻辑是反的（cocos/core/platform/debug.ts:206）：

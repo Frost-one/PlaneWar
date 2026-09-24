@@ -121,16 +121,19 @@ export class BeamEmitter implements Emitter {
   private ensureBeam(ctx: FireContext): boolean {
     if (this.node && this.node.isValid) return true
 
-    if (!ctx.beamLayer) {
+    // 挂载层 = 子弹管理器的容器节点 —— 激光和实体弹渲染在同一个容器下，
+    // 层级统一；坐标也一致（容器位置是 0，与 Player 同父）。
+    const layer = ctx.bulletManager?.node
+    if (!layer) {
       if (!this.layerWarned) {
         this.layerWarned = true
-        console.warn('【Player】 beamLayer没拖')
+        console.warn('【BeamEmitter】 拿不到子弹管理器（BulletManager 未注册）')
       }
       return false
     }
 
     this.node = new Node(`Beam_${this.id}`)
-    this.node.parent = ctx.beamLayer
+    this.node.parent = layer
     this.gfx = this.node.addComponent(Graphics)
     return true
   }

@@ -1,13 +1,4 @@
-import {
-  _decorator,
-  Component,
-  EventKeyboard,
-  Input,
-  input,
-  KeyCode,
-  Node,
-  Sprite,
-} from 'cc'
+import { _decorator, Component, EventKeyboard, Input, input, KeyCode,  Sprite } from 'cc'
 import { GameConfig } from '../data/config/GameConfig'
 import { eventBus } from '../core/EventBus'
 import { StateChangePayload, GameState } from '../data/GameState'
@@ -17,8 +8,7 @@ import { getShipOr, getShipPackageOr, getShipSprite } from '../data/ships/ShipRe
 import type { ShipConfig } from '../data/ships/ShipConfig'
 import type { Emitter, FireContext } from './emitters/Emitter'
 import { NO_MODS } from './emitters/Emitter'
-import { validateRequiredProps } from '../core/utils/validate'
-const { ccclass, property } = _decorator
+const { ccclass } = _decorator
 
 /**
  * 玩家飞机控制组件
@@ -45,20 +35,11 @@ export class Player extends Component {
 
   // —— 射击相关 ——
   /**
-   * 子弹管理器（在 Player 节点 Inspector 中，拖入挂有 BulletManager 的节点）。
-   * 子弹的生成与回收统一交给它。
+   * 子弹管理器（模块级单例，start 里取 —— 注册发生在 BulletManager.onLoad，早于任何 start）。
+   * 不再走 @property：本组件在场景里、Enemy 在 prefab 里，prefab 无法通过 @property
+   * 引用场景节点，两边用同一套"运行时取单例"才一致。
    */
-  @property(BulletManager)
-  bulletManager: BulletManager | null = null
-
-  /**
-   * 持续型发射器（激光）的挂载层，建议拖入 GameRoot 下的一个空节点（如 Beams）。
-   *
-   * 只有激光用得到，散射/贯穿可以忽略（留空不报错）。
-   * ⚠️ 未拖引用时激光【只警告一次、不显示】，不会崩溃。
-   */
-  @property(Node)
-  beamLayer: Node | null = null
+  private bulletManager: BulletManager | null = null
 
   /** 当前机型配置；缓存下来，避免每帧查表 */
   private ship: ShipConfig = getShipOr(playerData.getSnapshot().shipId)
@@ -68,17 +49,6 @@ export class Player extends Component {
 
   /** 当前装配来自哪个机型；**只有换机型才重建装配**，换火力等级不重建 */
   private loadoutKey = ''
-
-  /**
-   * 必填引用一次性校验（漏了直接抛异常）。
-   *
-   * ⚠️ `beamLayer` 不在这里 —— 它是【机型相关】的可空属性：红 / 绿机根本没有激光发射器，
-   *    永远用不到它，做成必填会逼所有机型都拖一个用不到的节点。
-   *    它保持"可空 + 使用处 warn"，等"敌我双方子弹"一并讨论后再定。
-   */
-  protected onLoad(): void {
-    validateRequiredProps('Player', { bulletManager: this.bulletManager })
-  }
 
   /**
    * 输入监听与事件订阅跟随【激活状态】，与 onDisable 严格对称。
@@ -97,10 +67,13 @@ export class Player extends Component {
   }
 
   /**
-   * 依赖他人状态的初始化放 start：装配与外观都要读 playerData 快照。
-   * （onLoad 只做同步、无依赖的初始化，本组件没有这类内容，故不写 onLoad。）
+   * 依赖他人状态的初始化放 start：
+   * - 装配与外观要读 playerData 快照
+   * - 子弹管理器要等 BulletManager.onLoad 注册完才能取（注册发生在 onLoad，晚于本组件的 onLoad）
+   * 这两件都不能放进 onLoad。
    */
   protected start(): void {
+    this.bulletManager = BulletManager.getInstance()
     const snap = playerData.getSnapshot()
     this.applyLoadout(snap)
     this.applyAppearance(snap)
@@ -250,8 +223,9 @@ export class Player extends Component {
       fireLevel,
       x,
       y,
+      // 子弹管理器是单例，start 里取（见 BulletManager.getInstance 的时序说明）。
+      // 激光的渲染节点也挂在它的容器节点上 —— 所以不再需要单独的 beamLayer 属性。
       bulletManager: this.bulletManager,
-      beamLayer: this.beamLayer,
       mods: NO_MODS,
       // 子弹外观来自【当前机型自己的资源】（ShipAsset.bulletPrefab）。
       // 激光机型没有子弹 → 为 null，BeamEmitter 不读这个字段，不受影响。
