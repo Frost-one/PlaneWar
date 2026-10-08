@@ -15,17 +15,36 @@ import type { ShipConfig } from './ShipConfig'
  *
  * 【3 档火力，与 3 张贴图 1:1】（每升一级换一张图）
  *
- * 【数值怎么来的】激光的 dps = damagePerTick / tickInterval（持续命中，全吃）：
- *   lv1 7/0.12  ≈ 58 dps   光束宽 26（原 lv1 是 50 dps，略微上调）
- *   lv2 11/0.10 ≈ 110 dps  宽 34 —— 正好落在旧"lv3 ~110 dps"的校准锚点上
- *   lv3 16/0.08 ≈ 200 dps  宽 44 —— 与旧 lv5 持平，BOSS 的 TTK 不用重算
- * 每级跨度约 +90%（原 5 档约 +30%）：激光没有"多发几颗"这种可见变化，
- * 只能靠"更粗的光束 + 更高的跳伤"来让升级被感知，所以跨度给得比实体弹更大。
+ * 【tickInterval 三档统一 = 0.1s（10Hz），输出量只由 damagePerTick 承担】
+ *
+ * 【为什么不随等级变间隔】
+ *   间隔是"节奏 / 事件粒度"，不是输出量。让它随等级变，等于把两件事拧在同一个旋钮上：
+ *   升一级到底是"打得更疼"还是"打得更密"？玩家感知不出区别，调数值的人却要同时算两个数。
+ *   固定之后 dps 与 damagePerTick 一一对应 —— **改伤害就是改输出，没有第二种解读**。
+ *
+ * 【为什么是 0.1s】
+ *   高频持续伤害（激光 / 电链 / 光环）业界常见区间是 0.05 ~ 0.15s，0.1s 是最主流的取值：
+ *     - 100ms 以下，人眼已经当作"连续在掉血"，看不出一跳一跳；
+ *     - 又足够稀疏，一次结算仍是一次【离散事件】——击杀（enemy_die → 加分 / 掉落 /
+ *       将来的受击特效）需要一个明确的"这一下打死"的时刻，做成每帧扣血就永远糊在一起。
+ *   本项目里加密 tick 几乎零成本（敌机查询本来就每帧都在做，结算只是复用那一帧的结果），
+ *   所以这个值纯按手感挑，不受性能约束。想更顺滑就调到 0.06s，伤害同比缩小即可。
+ *
+ * 【数值怎么来的】dps = damagePerTick / tickInterval，持续命中全吃：
+ *   lv1 6 / 0.1 = 60 dps
+ *   lv2 11 / 0.1 = 110 dps —— 旧"lv3 ~110 dps"的校准锚点
+ *   lv3 20 / 0.1 = 200 dps —— 与旧 lv5 持平，BOSS 的 TTK 不用重算
+ * ⚠️ Math.round 在结算时取整，lv1 的 6 实际是 60dps（较理论 58 高约 3%），无感。
+ *
+ * 【width 仍然递进（36 → 40 → 44）】
+ *   严格"只改伤害"的话 width 也该统一，但它是激光【唯一可见的升级反馈】——
+ *   激光不像实体弹能"多发几颗"，光束不跟着变粗，升级在画面上就只剩机型贴图变了。
+ *   若你更想要"等级纯粹 = 伤害"，把三档 width 拉平即可，一行的事。
  */
 const LEVELS: readonly BeamLevel[] = [
-  { damagePerTick: 7, tickInterval: 0.12, width: 26, length: 1200 },
-  { damagePerTick: 11, tickInterval: 0.1, width: 34, length: 1200 },
-  { damagePerTick: 16, tickInterval: 0.08, width: 44, length: 1200 },
+  { damagePerTick: 6, tickInterval: 0.1, width: 36, length: 1200 },
+  { damagePerTick: 11, tickInterval: 0.1, width: 40, length: 1200 },
+  { damagePerTick: 20, tickInterval: 0.1, width: 44, length: 1200 },
 ]
 
 export const SHIP_BLUE: ShipConfig = {
@@ -47,7 +66,6 @@ export const SHIP_BLUE: ShipConfig = {
       'ships/ship_blue/sprite_level_2/spriteFrame',
       'ships/ship_blue/sprite_level_3/spriteFrame',
     ],
-    beam: 'ships/ship_blue/beam',
     // shoot: 'ships/ship_blue/shoot',
   },
 }

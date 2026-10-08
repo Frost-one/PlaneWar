@@ -11,6 +11,15 @@ import { getEnemySprite } from '../data/enemies/EnemyRegistry'
 const { ccclass, property } = _decorator
 
 /**
+ * 敌机命中盒的半宽 / 半高（px，屏幕设计单位）。
+ * 对外暴露这个形状，是为了让非物理判定（激光）不必知道内部算了多少层。
+ */
+export interface EnemyHalfSize {
+  readonly halfW: number
+  readonly halfH: number
+}
+
+/**
  * 敌机实体组件（挂在 Enemy Prefab 上）
  * - 每帧向下飞行（朝屏幕下方移动，与玩家子弹向上相反）
  * - 飞出玩家可视区域下界、被击中、或撞到玩家时，通过 despawn() 统一回收（归还对象池）
@@ -273,5 +282,26 @@ export class Enemy extends Component {
         this.despawn()
       }, 0)
     }
+  }
+
+  /** 取不到碰撞体时的兜底（半宽 / 半高都是 0 → 判定必然不重叠） */
+  private static readonly ZERO_HALF_SIZE: Readonly<EnemyHalfSize> = { halfW: 0, halfH: 0 }
+
+  /**
+   * 本机此刻的命中盒【半宽 / 半高】（已含节点缩放），供非物理的判定（激光）使用。
+   *
+   * 【为什么读 BoxCollider2D，而不是重算 contentSize × hitScale】
+   *   init 里已经把 `collider.size` 设成了 contentSize × hitScale，重算一遍就是给同一份量
+   *   开了第二条推导路径 —— 将来改一处、漏一处，就会变成"物理判定和激光判定不一样大"。
+   *   直接读碰撞盒能保证二者【永远共用同一个盒子】。
+   *
+   * ⚠️ 查询侧缓存一次 Node.position，不要在本方法里反复取。
+   */
+  public getHitHalfSize(): Readonly<EnemyHalfSize> {
+    const box = this.getComponent(BoxCollider2D)
+    if (!box) return Enemy.ZERO_HALF_SIZE
+    // collider.size 是节点本地尺寸（不受 scale 影响），所以要乘节点的实际缩放才是屏幕上的大小
+    const s = this.node.scale
+    return { halfW: (box.size.width * s.x) * 0.5, halfH: (box.size.height * s.y) * 0.5 }
   }
 }

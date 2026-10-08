@@ -1,10 +1,4 @@
-import {
-  _decorator,
-  Component,
-  Node,
-  Prefab,
-  math,
-} from 'cc'
+import { _decorator, Component, Node, Prefab, math } from 'cc'
 import { GameConfig } from '../data/config/GameConfig'
 import { eventBus } from '../core/EventBus'
 import { StateChangePayload, GameState } from '../data/GameState'
@@ -13,6 +7,7 @@ import { poolManager } from '../core/PoolManager'
 import { type EnemyConfig } from '../data/enemies/EnemyConfig'
 import { ENEMY_REGISTRY } from '../data/enemies/EnemyRegistry'
 import { validateRequiredProps } from '../core/utils/validate'
+import type { HitRect, HitResult } from '../entities/emitters/Emitter'
 const { ccclass, property } = _decorator
 
 /**
@@ -26,6 +21,30 @@ const { ccclass, property } = _decorator
  */
 @ccclass('EnemyManager')
 export class EnemyManager extends Component {
+  /**
+   * 单例引用：由本组件自己在 onLoad 里注册进来（写法与 BulletManager 完全一致）。
+   *
+   * 【为什么需要单例】
+   *   活体敌机列表只存在于本组件里，而要用它的 BeamEmitter 不是一个挂在节点上的组件
+   *   （它是在 ShipBlue.ts 里 `new` 出来的普通对象）——
+   *   **@property 只对组件生效**，对一个 new 出来的对象根本没地方拖引用。
+   *   所以只有"运行时按类型取到那个唯一实例"这一条路。
+   *
+   * 不加 `private constructor` —— 组件必须由引擎构造，加了引擎就 new 不出实例。
+   */
+  private static instance: EnemyManager | null = null
+
+  /**
+   * 取敌机管理器 —— 只能在 **start 及以后** 调用（注册发生在 onLoad，早于任何 start）。
+   * 未注册时抛异常，让"忘了挂 EnemyManager 节点"立刻暴露，而不是等到查询时发现场上永远没有敌机。
+   */
+  public static getInstance(): EnemyManager {
+    if (!EnemyManager.instance) {
+      throw new Error('[EnemyManager] 场景里没有挂载 EnemyManager 的节点')
+    }
+    return EnemyManager.instance
+  }
+
   /** 生成间隔（秒）：每隔多少秒生成一架 */
   @property
   spawnInterval = 1
@@ -75,6 +94,12 @@ export class EnemyManager extends Component {
    */
   protected onLoad(): void {
     validateRequiredProps('EnemyManager', { enemyPrefab: this.enemyPrefab })
+
+    // 注册单例：挂多个会让"激光该查谁"变得不确定，直接抛异常逼着清理干净
+    if (EnemyManager.instance && EnemyManager.instance !== this) {
+      throw new Error('[EnemyManager] 场景里有多个 EnemyManager 节点，请只保留一个')
+    }
+    EnemyManager.instance = this
   }
 
   /**
@@ -91,8 +116,52 @@ export class EnemyManager extends Component {
   }
 
   protected onDestroy(): void {
-    // 兜底注销（off 幂等），不依赖 onDisable 是否被调用过
     eventBus.off('state_change', this.onStateChange, this)
+    if (EnemyManager.instance === this) EnemyManager.instance = null
+  }
+
+  /**
+   * 查一块矩形里【最接近发射端】的敌机（激光用），没有则 null。
+   *
+   * 【最近 = y 最小】光束从机头沿 +y 射出去，所以"挡在最前面"的就是 y 最小的那台；
+   *   不贯穿 ⇒ 一个 tick 只结算它，后面的敌机被前面这台挡着。
+   *
+   * 【为什么连 y 一起返回】发射器要用它当光束的视觉长度（画到目标身上为止），
+   *   与其让发射器回头再问一次位置，不如这里一次给全。
+   *
+   * 【返回的 y 是【碰撞盒底边】，不是敌机中心】
+   *   光束从下往上打，真正的接触面是敌机盒子的下边缘；返回中心会让光束"扎进机身半截"。
+   *   ⚠️ 但【谁最近】仍然按中心 y 比较（那才是排序用的量），两者不是一回事。
+   *
+   * @param rect 查询区域（与 ctx.x / ctx.y 同源的局部坐标）
+   */
+  public queryNearestHit(rect: HitRect): HitResult | null {
+    // ⚠️ 必须拷贝一份再遍历：结算过程中敌机可能被打死 → 立刻回收 → 会从 enemyList 里 splice
+    const list = this.enemyList.slice()
+
+    let nearest: HitResult | null = null
+    let nearestCenterY = Infinity
+
+    for (const node of list) {
+      // 池里的节点可能在上一 tick 之后就被回收了
+      if (!node?.isValid) continue
+
+      const enemy = node.getComponent(Enemy)
+      if (!enemy) continue
+
+      const p = node.position
+      const half = enemy.getHitHalfSize()
+      // 任一轴不重叠就在框外（两轴都重叠才算命中）
+      if (rect.minX >= p.x + half.halfW || rect.maxX <= p.x - half.halfW) continue
+      if (rect.minY >= p.y + half.halfH || rect.maxY <= p.y - half.halfH) continue
+
+      if (p.y < nearestCenterY) {
+        nearestCenterY = p.y
+        // 截断点 = 接触面（盒底边），光束就顶在这里
+        nearest = { target: enemy, y: p.y - half.halfH }
+      }
+    }
+    return nearest
   }
 
   /**

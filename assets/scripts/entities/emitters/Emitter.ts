@@ -24,6 +24,59 @@ import type { Prefab } from 'cc'
  */
 
 /**
+ * 一块判定区域（四条边描述的矩形）。
+ *
+ * 【为什么用四条边，而不是 center + size】
+ *   判定端只关心"谁落在这个范围内"，四条边可以直接比较，
+ *   不必每次先把中心换算成 min/max —— 少一层推导就少一处能写错的地方。
+ *
+ * 【坐标系】与 ctx.x / ctx.y 同源：三个容器（Player / EnemyContainer / BulletContainer）
+ *   同为 GameRoot 的直接子节点且都在原点，所以这里一律是【局部坐标】，不做任何转换。
+ */
+export interface HitRect {
+  readonly minX: number
+  readonly minY: number
+  readonly maxX: number
+  readonly maxY: number
+}
+
+/**
+ * 可被伤害的最小契约 —— 只有"挨打"这一件事。
+ *
+ * 【为什么激光器不直接拿 Enemy】
+ *   让它认识 Enemy 本体，就等于给发射器加了一条对具体敌机类型的依赖；
+ *   将来要给 BOSS 的护盾、场景里的可破坏物、僚机的假目标做同样的事都要改类型。
+ *   只需要"能挨打"，那就只声明"能挨打"。
+ */
+export interface Damageable {
+  takeDamage(d: number): void
+}
+
+/**
+ * 一次矩形查询的结果：最近的目标，以及它此刻的 y。
+ *
+ * 【为什么要把 y 也带出来】
+ *   光束不贯穿 ⇒ 它必须【画到<｜hy_place▁holder▁no▁813｜> 目标身上为止】。位置是画不出 dash 的关键输入，
+ *   而目标本身（Damageable）刻意只有 takeDamage 一件事。
+ *   把坐标放进查询结果，就不需要为了显示问题去撑胖 Damageable 接口。
+ */
+export interface HitResult {
+  readonly target: Damageable
+  /** 命中目标此刻的中心 y（与 rect 同源的坐标） */
+  readonly y: number
+}
+
+/**
+ * 矩形查询：给我一块区域，返回【其中最接近发射端的一个】目标，没有则返回 null。
+ *
+ * 【为什么是"一个"而不是"所有"】
+ *   湛影定位是不贯穿：一个 tick 只结算挡在最前面的那一台。
+ *   "谁最近"取决于坐标，而坐标只有持有节点的那一侧知道 —— 所以选择逻辑在 Manager 里做，
+ *   这里只把它对外表现为一个简单函数，不必把坐标也塞进 Damageable 接口。
+ */
+export type HitQuery = (rect: HitRect) => HitResult | null
+
+/**
  * 开火上下文：一次 tick 时的"当时事实"。
  * 发射器只从 ctx 读，不自己去别的地方捞 —— 这是它能被复用（甚至被 BOSS 复用）的前提。
  */
@@ -63,6 +116,19 @@ export interface FireContext {
   readonly bulletPrefab: Prefab | null
   /** 修饰量：飞船升级 / 道具带来的乘区 */
   readonly mods: FireMods
+
+  /**
+   * 命中查询器：给发射器一个"这块矩形里有没有目标"的入口（激光用）。
+   *
+   * 【为什么它必须在 ctx 里，而不是发射器自己去取管理器】
+   *   一旦 BeamEmitter 自己 import EnemyManager，它就和一个具体的场景管理器
+   *   焊死了，脱离本场景（复用给 BOSS、写单元测试）都做不到。
+   *   放进 ctx 之后它退化成"谁调用我，谁负责给我事实"。
+   *
+   * 【实体弹不需要它】
+   *   子弹有飞行体，命中由物理碰撞回调完成，所以在 LaneEmitter 这里是 null。
+   */
+  readonly hitQuery: HitQuery | null
 }
 
 /**

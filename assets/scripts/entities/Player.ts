@@ -3,10 +3,11 @@ import { GameConfig } from '../data/config/GameConfig'
 import { eventBus } from '../core/EventBus'
 import { StateChangePayload, GameState } from '../data/GameState'
 import { BulletManager } from '../managers/BulletManager'
+import { EnemyManager } from '../managers/EnemyManager'
 import { IPlayerData, playerData } from '../data/PlayerData'
 import { getShipOr, getShipPackageOr, getShipSprite } from '../data/ships/ShipRegistry'
 import type { ShipConfig } from '../data/ships/ShipConfig'
-import type { Emitter, FireContext } from './emitters/Emitter'
+import type { Emitter, FireContext, HitQuery } from './emitters/Emitter'
 import { NO_MODS } from './emitters/Emitter'
 const { ccclass } = _decorator
 
@@ -41,6 +42,16 @@ export class Player extends Component {
    */
   private bulletManager: BulletManager | null = null
 
+  /**
+   * 命中查询器（激光等"没有飞行体"的武器用），由本机一层包装好后注入 FireContext。
+   *
+   * 【为什么要在 start 里包一层箭头函数，而不是运行时直接传方法】
+   *   ① 不能直接写 `this.enemyManager.queryNearestHit` —— 原型方法脱离 this 调用会拿不到自己的字段；
+   *   ② 也不能在 tickEmitters 里临时包闭包 —— 那会【每帧】新建一个函数对象，纯浪费。
+   *   绑定一次存成字段，是这两者的唯一交点。
+   */
+  private hitQuery: HitQuery | null = null
+
   /** 当前机型配置；缓存下来，避免每帧查表 */
   private ship: ShipConfig = getShipOr(playerData.getSnapshot().shipId)
 
@@ -74,6 +85,11 @@ export class Player extends Component {
    */
   protected start(): void {
     this.bulletManager = BulletManager.getInstance()
+
+    // 敌机管理器同样在 onLoad 注册，这里（start）取一定拿得到。
+    const enemyManager = EnemyManager.getInstance()
+    this.hitQuery = (rect) => enemyManager.queryNearestHit(rect)
+
     const snap = playerData.getSnapshot()
     this.applyLoadout(snap)
     this.applyAppearance(snap)
@@ -230,6 +246,8 @@ export class Player extends Component {
       // 子弹外观来自【当前机型自己的资源】（ShipAsset.bulletPrefab）。
       // 激光机型没有子弹 → 为 null，BeamEmitter 不读这个字段，不受影响。
       bulletPrefab: getShipPackageOr(this.ship.id)?.asset.bulletPrefab ?? null,
+      // 激光判定入口（实体弹机型不使用它，但传出去无妨 —— 没用到就是 null 的开销）
+      hitQuery: this.hitQuery,
     }
 
     for (const e of this.emitters) {
