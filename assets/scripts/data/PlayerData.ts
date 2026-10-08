@@ -61,12 +61,12 @@ export class PlayerData {
 
   public reset(): void {
     this.applyShip(getShipOr(this.shipId))
-    // this.weaponLevel = 1
-    // this.hp = 100
-    // this.maxHp = 100
-    // this.attack = 100
-    // this.speed = 300
-    // this.score = 0
+    this.weaponLevel = 1
+    // this.hp = 100      // 由 applyShip 覆盖：hp = maxHp
+    // this.maxHp = 100   // 由 applyShip 覆盖
+    // this.attack = 100  // 死字段，暂无读取方
+    // this.speed = 300   // 由 applyShip 覆盖：speed = ship.speed
+    this.score = 0
     // 重置同样广播，保证 UI 立即回到初始显示
     eventBus.emit('player_data_change', this.getSnapshot())
   }

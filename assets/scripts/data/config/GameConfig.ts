@@ -14,4 +14,8 @@ export class GameConfig {
   // —— 射击相关 ——
   /** 子弹出生点相对玩家机头的 y 偏移（沿 +y 即屏幕上方，从机头再往上探出一点） */
   static readonly BULLET_SPAWN_OFFSET_Y = 10
+
+  // —— 游戏流程 ——
+  /** 临时胜利阈值：累计分数达到即通关，等 WaveManager 用"波次清空"判定接管 */
+  static readonly WIN_SCORE = 500
 }

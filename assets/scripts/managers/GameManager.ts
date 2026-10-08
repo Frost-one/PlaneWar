@@ -112,10 +112,10 @@ export class GameManager {
     console.log('敌机死亡：', data)
     playerData.addScore(data.score)
 
-    // 临时做的胜利条件
-    // if (playerData.getSnapshot().score >= 500) {
-    //   this.endGame(GameResult.WIN)
-    // }
+    // 临时胜利条件，等 WaveManager 用"波次清空"判定接管
+    if (playerData.getSnapshot().score >= GameConfig.WIN_SCORE) {
+      this.endGame(GameResult.WIN)
+    }
   }
 
   /**

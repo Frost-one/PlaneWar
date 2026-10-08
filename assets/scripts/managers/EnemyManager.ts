@@ -84,7 +84,7 @@ export class EnemyManager extends Component {
   private static readonly SPAWN_WEIGHTS: Record<string, number> = {
     e_normal: 6,
     e_elite: 3,
-    e_boss: 1,
+    e_boss: 0, // 临时：Boss 不进随机池，等 WaveManager 单独控制出现
   }
 
   /**
