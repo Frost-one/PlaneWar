@@ -7,7 +7,7 @@ import { type EnemyConfig, type EnemyBounds, type EnemyMover } from '../data/ene
 import type { EnemyManager } from '../managers/EnemyManager'
 import { Bullet } from './Bullet'
 import { PHYSICS_GROUP } from '../data/config/PhysicsGroups'
-import { getEnemySprite } from '../data/enemies/EnemyRegistry'
+import { getEnemy } from '../data/enemies/EnemyRegistry'
 const { ccclass, property } = _decorator
 
 /**
@@ -37,6 +37,8 @@ export class Enemy extends Component {
   private hp = 1
   private score = 0
   private damage = 0
+  /** 击毁后的掉落概率（0~1），由 init 从 cfg 拷入；死亡时交给掉落系统掷骰 */
+  private dropChance = 0
 
   // —— 轨迹（由 init 从 cfg 拷入）——
   private move: EnemyMover | null = null
@@ -104,6 +106,7 @@ export class Enemy extends Component {
     this.hp = cfg.maxHp          // 当前血量从满血开始
     this.score = cfg.score
     this.damage = cfg.damage
+    this.dropChance = cfg.dropChance
 
     // 2. 轨迹：直接拷入移动函数，专属参数已写死在各敌机文件的闭包里
     this.move = cfg.move
@@ -117,7 +120,10 @@ export class Enemy extends Component {
     //    —— 这就是"角色是数据"：size / 贴图全从 cfg 来，prefab 不再区分机型。
     //    节点缩放等比例作用于节点内容（含碰撞体），与 cfg.scale 是一层线性关系、不会二次相乘。
     const sprite = this.getComponent(Sprite)
-    if (sprite) sprite.spriteFrame = getEnemySprite(cfg.id)
+    if (sprite) {
+      const sf = getEnemy(cfg.id)?.asset?.sprite ?? null
+      sprite.spriteFrame = sf
+    }
     this.node.setScale(cfg.scale, cfg.scale, 1)
 
     // 5. 命中盒同步（修复"碰撞盒与图片错位"）：
@@ -274,7 +280,8 @@ export class Enemy extends Component {
     if (this.hp <= 0) {
       eventBus.emit('enemy_die', {
         enemyNode: this.node,
-        score: this.score
+        score: this.score,
+        dropChance: this.dropChance,
       })
 
       // 通过回调触发（命中击杀在碰撞回调里，下一帧再回收，避免物理回调中改节点）

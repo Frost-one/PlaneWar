@@ -45,7 +45,7 @@ export const SHIP_RED: ShipConfig = {
   // 资源：与数值同处一个文件，改这架飞机只看这里
   assetPaths: {
     // 外观档：数组下标 = 外观档号，与火力【1:1】—— 第 1/2/3 级各一张图。
-    // 第 1/2/3 级各一张图，与火力 1:1。将来若档数 > 图数，映射加在 getShipSprite 里即可。
+    // 第 1/2/3 级各一张图，与火力 1:1。将来若档数 > 图数，映射加在 getShip(id).asset.sprites 里即可。
     // ⚠️ 取 SpriteFrame 必须带 `/spriteFrame` 子资源后缀，漏了会加载失败。
     sprites: [
       'ships/ship_red/sprite_level_1/spriteFrame',

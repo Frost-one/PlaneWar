@@ -65,6 +65,9 @@ export class BeamEmitter implements Emitter {
 
   private readonly levels: readonly BeamLevel[]
   private readonly minLevel: number
+
+  /** 火力档位数（索引上限）；供 P 道具升级时计算 weaponLevel 天花板 */
+  readonly maxLevel: number
   private readonly color: Color
   /** 流动亮条的颜色：由底色现算，换底色时自动跟随，不必再多一个配置位 */
   private readonly flowColor: Color
@@ -91,6 +94,7 @@ export class BeamEmitter implements Emitter {
     this.levels = levels
     this.minLevel = minLevel
     this.color = color
+    this.maxLevel = levels.length
     // 亮条 = 底色整体提亮（各通道夹到 255），换底色时不用再手配一个颜色
     this.flowColor = new Color(
       Math.min(255, color.r + FLOW_BRIGHTNESS),

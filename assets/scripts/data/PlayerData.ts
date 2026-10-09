@@ -1,5 +1,5 @@
 import { eventBus } from '../core/EventBus'
-import { DEFAULT_SHIP_ID, getShipOr } from './ships/ShipRegistry'
+import { getShip, SHIP_REGISTRY } from './ships/ShipRegistry'
 import type { ShipConfig } from './ships/ShipConfig'
 
 /** 玩家数据字段的形状：用于整份快照、partial 批量设置与存档 */
@@ -15,7 +15,7 @@ export interface IPlayerData {
 }
 
 export class PlayerData {
-  private shipId: string = DEFAULT_SHIP_ID
+  private shipId: string = SHIP_REGISTRY[0].id
   /**
    * 武器等级（即火力等级）：局内成长（吃 P 道具提升），死亡 / 新局清零。
    * 名字里特意带 weapon，因为它的唯一用途就是当"当前火力档位"传给发射器：
@@ -60,7 +60,8 @@ export class PlayerData {
   }
 
   public reset(): void {
-    this.applyShip(getShipOr(this.shipId))
+    const s = getShip(this.shipId)
+    this.applyShip(s ? s.config : SHIP_REGISTRY[0])
     this.weaponLevel = 1
     // this.hp = 100      // 由 applyShip 覆盖：hp = maxHp
     // this.maxHp = 100   // 由 applyShip 覆盖
@@ -113,7 +114,7 @@ export class PlayerData {
   // 读取玩家存档
   public fromJSON(data: any): void {
     this.setPlayerData({
-      shipId: this.shipId ?? DEFAULT_SHIP_ID,
+      shipId: this.shipId ?? SHIP_REGISTRY[0].id,
       weaponLevel: data.weaponLevel ?? 1,
       hp: data.hp ?? 100,
       maxHp: data.maxHp ?? 100,

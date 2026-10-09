@@ -27,7 +27,7 @@ export interface ShipAssetPath {
    *
    * ⚠️ **数组长度不必等于火力档数** ——
    *   现在两者都是 3（1:1，每级一张图），但美术出图通常跟不上升档位速度：
-   *   将来"4 档火力只配 3 张图"时，映射加在 ShipRegistry.getShipSprite 里（那是唯一取图入口），
+   *   将来"4 档火力只配 3 张图"时，映射加在 ShipRegistry.getShip(id).asset.sprites 里（对外取图统一走 getShip），
    *   这里只负责"有哪些图"，不负责"哪档用哪张"。
    */
   readonly sprites: readonly string[]

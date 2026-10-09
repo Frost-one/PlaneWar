@@ -54,6 +54,9 @@ export class LaneEmitter implements Emitter {
   /** 各火力档参数；索引 = fireLevel - 1 */
   private readonly levels: readonly LaneLevel[]
 
+  /** 火力档位数（索引上限）；供 P 道具升级时计算 weaponLevel 天花板 */
+  readonly maxLevel: number
+
   /** 低于该火力等级则完全不开火（做"升级解锁僚机 / 副武器"时用） */
   private readonly minLevel: number
 
@@ -67,6 +70,7 @@ export class LaneEmitter implements Emitter {
     this.id = id
     this.levels = levels
     this.minLevel = minLevel
+    this.maxLevel = levels.length
   }
 
   tick(dt: number, ctx: FireContext): void {

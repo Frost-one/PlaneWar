@@ -3,6 +3,7 @@ import { gameManager } from './managers/GameManager'
 import { GameState } from './data/GameState'
 import { loadShipAssets } from './data/ships/ShipRegistry'
 import { loadEnemyAssets } from './data/enemies/EnemyRegistry'
+import { loadPickupAssets } from './data/pickups/PickupRegistry'
 
 const { ccclass, property } = _decorator
 
@@ -12,7 +13,7 @@ export class GameEntry extends Component {
     // 启用 2D 物理系统：子弹/敌机已改为物理刚体（RigidBody2D）驱动，
     // 必须开启物理系统，刚体才会被推进与产生碰撞。
     // PhysicsSystem2D.instance.enable = true
-    PhysicsSystem2D.instance.debugDrawFlags = 1
+    // PhysicsSystem2D.instance.debugDrawFlags = 1
 
     // 游戏启动引导：先把机型资源读齐，再让状态机进入主菜单。
     //
@@ -29,6 +30,9 @@ export class GameEntry extends Component {
     // 共享敌机 body prefab 由 EnemyManager.start() 自己加载持有，不在此处——
     // registry 只缓存「每类外观资源」，与 ShipRegistry 严格对称。
     await loadEnemyAssets()
+
+    // 道具图标（按各 config.spritePath）在进菜单前读齐（与 ships / enemies 同一时机）。
+    await loadPickupAssets()
 
     // await 之后必须先确认节点还活着：加载期间本节点可能已被销毁。
     // （生命周期规范：任何 await 之后操作节点前都要检查 node.isValid）

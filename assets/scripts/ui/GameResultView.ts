@@ -54,7 +54,9 @@ export class GameResultView extends Component {
    * 结算面板只在 OVER 状态显示，其余时间处于隐藏状态 —— 隐藏期间不该继续收广播。
    */
   protected onEnable(): void {
-    eventBus.on('state_change', this.onStateChange, this)
+    // 激活时主动拉一次最新结果：UIManager 是在 state_change 之后才切显隐，
+    // 面板激活时可能已错过事件；直接读 GameManager 快照避免空标题/空分数。
+    this.refresh()
 
     // 按钮点击：统一转发给 GameManager，由它切换状态
     this.restartBtn.node.on(Button.EventType.CLICK, this.onRestartClick, this)
@@ -62,26 +64,20 @@ export class GameResultView extends Component {
   }
 
   protected onDisable(): void {
-    eventBus.off('state_change', this.onStateChange, this)
-
     this.restartBtn.node.off(Button.EventType.CLICK, this.onRestartClick, this)
     this.menuBtn.node.off(Button.EventType.CLICK, this.onMenuClick, this)
   }
 
   protected onDestroy(): void {
     // 兜底注销（off 幂等），不依赖 onDisable 是否被调用过
-    eventBus.off('state_change', this.onStateChange, this)
-
     this.restartBtn.node.off(Button.EventType.CLICK, this.onRestartClick, this)
     this.menuBtn.node.off(Button.EventType.CLICK, this.onMenuClick, this)
   }
 
-  /**
-   * 状态变化：进入 OVER 时展示结算面板，并按结算结果自动填入标题。
-   */
-  private onStateChange({ result }: StateChangePayload): void {
+  /** 刷新标题与分数（激活时与收到事件时都走这里） */
+  private refresh(): void {
     // 记录本局结果，供标题文案与后续逻辑使用
-    this.result = result
+    this.result = gameManager.getGameResult()
     // 从数据层只读最新分数用于展示
     this.finalScoreLabel.string = `最终得分：${playerData.getSnapshot().score}`
     // 标题：按结算结果自动填入（胜利 / 失败）

@@ -59,7 +59,7 @@ export const SHIP_BLUE: ShipConfig = {
 
   // 资源：激光机【没有 bullet】，用 beam 代替 —— 不写就是没有，不用塞假值
   assetPaths: {
-    // 第 1/2/3 级各一张图，与火力 1:1（取图统一走 getShipSprite(id, 火力等级 - 1)）。
+    // 第 1/2/3 级各一张图，与火力 1:1（取图统一走 getShip(id).asset.sprites[火力等级 - 1]）。
     // ⚠️ 取 SpriteFrame 必须带 `/spriteFrame` 子资源后缀，漏了会加载失败。
     sprites: [
       'ships/ship_blue/sprite_level_1/spriteFrame',

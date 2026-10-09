@@ -2,7 +2,7 @@ import { _decorator, Button, Component, Label, Sprite } from 'cc'
 import { eventBus } from '../core/EventBus'
 import { playerData } from '../data/PlayerData'
 import type { IPlayerData } from '../data/PlayerData'
-import { cycleShip, getShip, getShipSprite, isShipAssetsLoaded } from '../data/ships/ShipRegistry'
+import { cycleShip, getShip, isShipAssetsLoaded } from '../data/ships/ShipRegistry'
 import type { ShipConfig } from '../data/ships/ShipConfig'
 import { validateRequiredProps } from '../core/utils/validate'
 const { ccclass, property } = _decorator
@@ -153,16 +153,16 @@ export class ShipSelectView extends Component {
     //      → 什么都不做，等 `ship_assets_ready` 广播唤醒即可；
     //   ② 加载已结束却仍没有 → 这才是真的缺资源，保留 prefab 原样并警告。
     // 不区分二者的话，每次进菜单都会先打一条误导性的"资源没放好"警告。
-    const frame = getShipSprite(cfg.id)
+    const frame = cfg.asset?.sprites[0] ?? null
     if (frame) {
       this.previewSprite.spriteFrame = frame
     } else if (isShipAssetsLoaded()) {
-      console.warn(`[ShipSelectView] 机型贴图未加载：${cfg.id}（检查 assets/resources/ 下是否放了资源）`)
+      console.warn(`[ShipSelectView] 机型贴图未加载：${cfg.config.id}（检查 assets/resources/ 下是否放了资源）`)
     }
 
-    this.nameLabel.string = cfg.name
-    this.infoLabel.string = `生命 ${cfg.maxHp}　速度 ${cfg.speed}`
+    this.nameLabel.string = cfg.config.name
+    this.infoLabel.string = `生命 ${cfg.config.maxHp}　速度 ${cfg.config.speed}`
     // 开火风格：机型自己声明的显示名（各机型的弹道数值已下沉到飞船文件，这里只读名字）
-    this.weaponLabel.string = cfg.fireStyleName
+    this.weaponLabel.string = cfg.config.fireStyleName
   }
 }

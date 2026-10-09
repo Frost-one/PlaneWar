@@ -37,7 +37,7 @@ export const SHIP_GREEN: ShipConfig = {
 
   // 资源：与数值同处一个文件
   assetPaths: {
-    // 第 1/2/3 级各一张图，与火力 1:1（取图统一走 getShipSprite(id, 火力等级 - 1)）。
+    // 第 1/2/3 级各一张图，与火力 1:1（取图统一走 getShip(id).asset.sprites[火力等级 - 1]）。
     // ⚠️ 取 SpriteFrame 必须带 `/spriteFrame` 子资源后缀，漏了会加载失败。
     sprites: [
       'ships/ship_green/sprite_level_1/spriteFrame',

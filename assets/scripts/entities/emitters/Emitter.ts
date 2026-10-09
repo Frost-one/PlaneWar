@@ -156,6 +156,9 @@ export interface Emitter {
   /** 唯一标识（同一个机型里不要重名，用于 debug 与缓存 key） */
   readonly id: string
 
+  /** 火力档位数（= levels.length）；P 道具升级时作为 weaponLevel 的天花板 */
+  readonly maxLevel: number
+
   /**
    * 每帧推进。到点了就自己开火 —— 没有"返回值"，也没有"本轮发什么"的数据契约。
    *

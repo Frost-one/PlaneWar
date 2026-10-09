@@ -9,182 +9,87 @@ import { SHIP_BLUE } from './ShipBlue'
 /**
  * 机型登记表 + 资源服务（原 ShipTable.ts 已合并进来）。
  *
- * 【为什么它必须独立成文件，不能合并回 ShipConfig.ts】
- *   它要 value-import 三个机型文件；而那三个文件又要 import type ShipConfig。
- *   合并就等于让契约层反向依赖数据层 —— 虽然 import type 编译后消失、跑得起来，
- *   但只要有人把 `import { ShipConfig }` 写成值引用，立刻成循环依赖。
- *   拆开后 **ShipConfig.ts 是零运行时代码的纯类型文件，循环在结构上不可能发生。**
- *
- * 【为什么资源加载也放在这里，而不是 core】
- *   core/utils/asset.ts 只认识「路径 + 类型」，不认识飞机；
- *   而"遍历所有机型、按各自声明的 assetPaths 去加载"必须认识 ShipConfig。
- *   依赖方向是 data → core，反过来不行。
+ * 本文件 value-import 三个机型文件，而它们只用 `import type` 引用 ShipConfig，
+ * 故 ShipConfig.ts 保持零运行时代码，循环依赖在结构上不可能发生。
+ * 资源加载也放在这里而非 core：core 只认识"路径 + 类型"，
+ * "遍历机型、按各自 assetPaths 加载"必须认识 ShipConfig（依赖方向 data → core）。
  */
 
-/** 全部机型 */
-export const SHIP_REGISTRY: readonly ShipConfig[] = [SHIP_RED, SHIP_GREEN, SHIP_BLUE]
-
-/** 默认机型：还没选过时的兜底 */
-export const DEFAULT_SHIP_ID = SHIP_RED.id
-
-/** 全部机型 id（存档校验 / Debug 面板用） */
-export const SHIP_IDS: readonly string[] = SHIP_REGISTRY.map((c) => c.id)
-
-/** 一架飞机的"数值 + 资源"——消费侧唯一需要认识的东西 */
-export interface ShipPackage {
-  readonly config: ShipConfig
-  readonly asset: ShipAsset
-}
+/** 静态机型模板：零运行时，仅作加载路径来源与数值源（双存储之一） */
+export const SHIP_REGISTRY: readonly ShipConfig[] = [
+  SHIP_RED,
+  SHIP_GREEN,
+  SHIP_BLUE
+]
 
 /**
- * 已加载资源的缓存。
+ * 运行时完整大对象 = 静态配置 + 加载资源，调用方只认这一个。
+ * 直接引用 ShipConfig / ShipAsset 两个源类型：未来给任一【源接口】加字段，
+ * 这里【不用改】——类型自动延伸，getShip 也只是原样打包。
+ * 保留 config / asset 两级，静态模板与运行期资源的边界在类型上依然清晰。
  *
- * 这是整套设计里【唯一的异步产物】：路径写在飞船文件里是静态的，
- * 但 SpriteFrame / Prefab 这些对象必须运行时加载，加载完就存在这里，
- * 之后所有取用都是同步的。
+ * ⚠️ asset 可空：配置在启动期即可用，资源是异步加载的、可能尚未就绪（asset = null）。
+ *    〔id 未知〕才返回 null；〔资源没加载完〕时仍返回包装对象、只是 asset 为 null，
+ *    调用方取资源前判空、等 `ship_assets_ready` 广播后刷新即可。
  */
+export interface ShipPackage {
+  readonly config: ShipConfig
+  /** 运行期资源；异步加载，启动期可能为 null（见 getShip） */
+  readonly asset: ShipAsset | null
+}
+
+/** 已加载资源的缓存：整套设计里唯一的异步产物（双存储之二） */
 const assetCache = new Map<string, ShipAsset>()
 
 /**
- * 加载是否已经**跑完一轮**（无论成功几家）。
- *
- * 【为什么必须有这个标志】
- *   上层拿不到贴图时，原因只有两种，但处理方式完全相反：
- *     ① 资源还在加载中 → **什么都不该做**（等 `ship_assets_ready` 广播即可）
- *     ② 加载已结束但还是没有 → **这才是真的缺资源**，该警告
- *   只靠 `getShipSprite() === null` 无法区分二者 —— 加载前和加载失败返回的都是 null。
- *   没有这个标志，UI 在启动第一帧必然打一条"资源没放好"的误导警告
- *   （因为选机面板的 onEnable 早于 loadShipAssets 完成）。
- *
- * 语义边界：它只说"跑完了"，**不代表加载成功**（失败几家就少几家）。
+ * 加载是否已跑完一轮。
+ * 区分"资源还在加载中"与"加载结束却仍缺资源"——UI 据此决定是否告警。
  */
 let loaded = false
-
-/** 资源加载是否已结束（无论是否成功）。用于区分"还没好"与"真的没有"。 */
 export function isShipAssetsLoaded(): boolean {
   return loaded
 }
 
 /**
- * 取某架飞机在指定外观档下的贴图 —— 【档 → 图】的唯一入口（Player / 选机界面都走这里）。
- *
- * 【外观档 = 火力等级 - 1】
- *   现在火力 3 档、机身图 3 张，两者 1:1，所以调用方直接传 `weaponLevel - 1` 即可，
- *   中间不需要任何映射：恒等映射不承载决策，只是一层空转
- *   （本项目判据：说不出它当下挡住什么成本，就删掉这层）。
- *
- * ⚠️ 若将来【火力档数 ≠ 贴图张数】（美术出图跟不上加档位速度），就在本函数开头做一次
- *   查表映射（越界顶到最后一档）—— 到那时它是真实需求，不是今天的假想。只改这一处即可。
- *
- * 【为什么要"向上回退"】外观档是稀疏的：可能只配了 1 张（单图机型），
- *   也可能第 2 张路径写错没加载出来。这时**宁可沿用上一张图**，
- *   也不要返回 null 让飞机变空白 —— 缺图是内容问题，不该让游戏崩掉表现。
- *
- * @param id         机型 id
- * @param stage      外观档（= 火力等级 - 1）；省略 = 0（第 1 档，永远存在）
+ * 统一入口：按 id 取"数值 + 资源"大对象。
+ * 〔id 未知〕返回 null；〔资源未加载完〕仍返回对象、asset 为 null（配置始终可用）。
+ * 内部从双存储（静态模板 + 资源缓存）join 而成——对外只看得到这一个大对象。
  */
-export function getShipSprite(id: string, stage = 0): SpriteFrame | null {
-  const sprites = assetCache.get(id)?.sprites
-  if (!sprites || sprites.length === 0) return null
-
-  // 上下限都在这里夹：超出张数顶到最后一张，负数（等级异常）夹回第 1 档
-  const clamped = Math.min(Math.max(0, Math.floor(stage)), sprites.length - 1)
-
-  // 从目标档往前找第一张非空的图（含 clamped 自己）
-  for (let i = clamped; i >= 0; i--) {
-    const frame = sprites[i]
-    if (frame) return frame
-  }
-  return null
+export function getShip(id: string): ShipPackage | null {
+  const c = SHIP_REGISTRY.find((x) => x.id === id)
+  if (!c) return null
+  return { config: c, asset: assetCache.get(id) ?? null }
 }
 
 /**
- * 启动阶段调用一次：按每架飞机【自己声明的路径】把资源读齐。
- *
- * 失败的机型会被跳过并打 error，不会让整个启动卡住 ——
- * 这样即使你还没把美术资源放进 resources/，游戏也能正常跑起来（只是没图）。
+ * 启动阶段调用一次：按每架飞机自己声明的路径把资源读齐。
+ * 失败的机型跳过并打 error，不卡整个启动（美术没放资源也能跑，只是没图）。
  */
 export async function loadShipAssets(): Promise<void> {
   await Promise.all(
     SHIP_REGISTRY.map(async (cfg) => {
       const p = cfg.assetPaths
-
-      // 贴图用 loadAssetList（不是 loadAssetOrNull）：它内部 Promise.all 按顺序并发，
-      // ✅ 返回值与入参【下标严格一一对应】—— 这是 sprites[i] ⟷ 第 i 档外观的前提。
-      // ⚠️ 不要图省事改成"逐个 await 塞进 Map"，那会丢掉顺序语义。
       const [sprites, bulletPrefab, beamPrefab, shootSfx] = await Promise.all([
         loadAssetList(p.sprites, SpriteFrame),
         loadAssetOrNull(p.bullet, Prefab),
         loadAssetOrNull(p.beam, Prefab),
         loadAssetOrNull(p.shoot, AudioClip),
       ])
-
-      // 只要有任何一项"配了却没加载出来"，就记一次失败。
-      // 具体是哪个路径、什么原因，由 loadAsset 自己打印 —— 这里只说结论。
       const ok =
         (!p.bullet || !!bulletPrefab) &&
         (!p.beam || !!beamPrefab) &&
         (!p.shoot || !!shootSfx)
-
       if (!ok) console.error(`[ships] ${cfg.id} 资源加载失败`)
-
-      // 机身图是必备的：缺了整架不可用。
-      // ⚠️ 只判第 0 档 —— 后面几档缺图是"内容待补"，沿用上一张图即可（见 getShipSprite）。
-      if (!sprites[0]) return
-
+      if (!sprites[0]) return // 机身图必备，缺了整架不可用
       assetCache.set(cfg.id, { sprites, bulletPrefab, beamPrefab, shootSfx })
     }),
   )
-
-  // 成功的一律不提，最后只汇总一句（没就绪的自然体现在数字上）
   console.log(`[ships] 资源加载完成：${assetCache.size}/${SHIP_REGISTRY.length}`)
-
-  // 先置完成标志，再广播 —— 顺序同下面的缓存，否则订阅方被唤醒时
-  // 仍会读到 loaded === false，又把"缺图"误判成"还在加载"。
   loaded = true
-
-  // —— 广播"资源就绪" ——
-  // 顺序必须是【先写缓存（上面的 assetCache.set）→ 再广播】，
-  // 否则订阅方被唤醒时读到的还是空缓存。
-  //
-  // 为什么需要这个事件：展示方（选机界面）的 onEnable 可能早于本函数执行完，
-  // 那时它读不到贴图；资源到位后靠这条广播补一次刷新。
   eventBus.emit('ship_assets_ready')
 }
 
-/** 按 id 取"数值 + 资源"，任一缺失返回 null（调用方决定如何兜底） */
-export function getShipPackage(id: string): ShipPackage | null {
-  const config = SHIP_REGISTRY.find((c) => c.id === id)
-  const asset = assetCache.get(id)
-  if (!config || !asset) return null
-  return { config, asset }
-}
-
-/**
- * 兜底版：取不到就回落默认机型；连默认机型都没加载成功时返回 null。
- * UI 用这个省得到处判空，但仍要处理 null（资源没放好的情况下会发生）。
- */
-export function getShipPackageOr(id: string): ShipPackage | null {
-  return getShipPackage(id) ?? getShipPackage(DEFAULT_SHIP_ID)
-}
-
-// ==================== 以下为原 ShipTable 的查询接口（保持原有行为） ====================
-
-/** 按 id 查机型，查不到返回 null */
-export function getShip(id: string): ShipConfig | null {
-  return SHIP_REGISTRY.find((c) => c.id === id) ?? null
-}
-
-/** 兜底版：查不到时回落默认机型 */
-export function getShipOr(id: string): ShipConfig {
-  return getShip(id) ?? SHIP_RED
-}
-
-/**
- * 循环取"第 offset 架"（选机界面左右箭头用）。
- * 把取模逻辑收在这里，是因为 JS 的 % 对负数返回负值（-1 % 3 === -1，不是 2），
- * 必须 `((x % n) + n) % n` 才对 —— 这种坑不该让 UI 层记。
- */
+/** 选机界面左右切换：负数取模坑收在这里（JS % 对负数返回负值） */
 export function cycleShip(currentId: string, offset: number): ShipConfig {
   const total = SHIP_REGISTRY.length
   const current = SHIP_REGISTRY.findIndex((c) => c.id === currentId)

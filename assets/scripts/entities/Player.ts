@@ -5,10 +5,11 @@ import { StateChangePayload, GameState } from '../data/GameState'
 import { BulletManager } from '../managers/BulletManager'
 import { EnemyManager } from '../managers/EnemyManager'
 import { IPlayerData, playerData } from '../data/PlayerData'
-import { getShipOr, getShipPackageOr, getShipSprite } from '../data/ships/ShipRegistry'
-import type { ShipConfig } from '../data/ships/ShipConfig'
+import { getShip, SHIP_REGISTRY } from '../data/ships/ShipRegistry'
+import type { ShipPackage } from '../data/ships/ShipRegistry'
 import type { Emitter, FireContext, HitQuery } from './emitters/Emitter'
 import { NO_MODS } from './emitters/Emitter'
+import { PickupType, PickupPayload } from '../data/pickups/PickupConfig'
 const { ccclass } = _decorator
 
 /**
@@ -25,6 +26,17 @@ const { ccclass } = _decorator
  */
 @ccclass('Player')
 export class Player extends Component {
+  /** 全局唯一实例（供掉落物等查询玩家位置）；由 onLoad 注册 */
+  private static instance: Player | null = null
+
+  /** 取玩家组件实例；仅在节点已激活（start 及以后）时可取 */
+  public static getInstance(): Player {
+    if (!Player.instance) {
+      throw new Error('[Player] 场景里没有挂载 Player 节点')
+    }
+    return Player.instance
+  }
+
   // —— 输入状态（4 个方向布尔）——
   private keyLeft = false
   private keyRight = false
@@ -52,14 +64,23 @@ export class Player extends Component {
    */
   private hitQuery: HitQuery | null = null
 
-  /** 当前机型配置；缓存下来，避免每帧查表 */
-  private ship: ShipConfig = getShipOr(playerData.getSnapshot().shipId)
+  /**
+   * 当前机型（配置 + 资源）大对象；缓存下来避免每帧查表。
+   * 配置在启动期即可用；资源是异步加载的，未就绪时 asset 为 null，
+   * 等 `ship_assets_ready` 广播（见 onShipAssetsReady）刷新为真实资源。
+   */
+  private ship: ShipPackage = getShip(playerData.getSnapshot().shipId) ?? getShip(SHIP_REGISTRY[0].id)!
 
   /** 当前装配的发射器（主机 + 僚机 + 副武器……都在这个数组里） */
   private emitters: readonly Emitter[] = []
 
   /** 当前装配来自哪个机型；**只有换机型才重建装配**，换火力等级不重建 */
   private loadoutKey = ''
+
+  /** 注册全局实例：节点激活时绑定，供掉落物查询位置 */
+  protected onLoad(): void {
+    Player.instance = this
+  }
 
   /**
    * 输入监听与事件订阅跟随【激活状态】，与 onDisable 严格对称。
@@ -73,6 +94,8 @@ export class Player extends Component {
 
     eventBus.on('state_change', this.onStateChange, this)
     eventBus.on('player_data_change', this.onPlayerDataChange, this)
+    // 拾取道具 → 按类型生效
+    eventBus.on('pickup_collected', this.onPickup, this)
     // 机身贴图是异步加载的，可能在 Player 启动之后才就绪 —— 靠这条广播补一次外观
     eventBus.on('ship_assets_ready', this.onShipAssetsReady, this)
   }
@@ -100,6 +123,7 @@ export class Player extends Component {
     input.off(Input.EventType.KEY_UP, this.onKeyUp, this)
     eventBus.off('state_change', this.onStateChange, this)
     eventBus.off('player_data_change', this.onPlayerDataChange, this)
+    eventBus.off('pickup_collected', this.onPickup, this)
     eventBus.off('ship_assets_ready', this.onShipAssetsReady, this)
   }
 
@@ -110,13 +134,17 @@ export class Player extends Component {
     input.off(Input.EventType.KEY_UP, this.onKeyUp, this)
     eventBus.off('state_change', this.onStateChange, this)
     eventBus.off('player_data_change', this.onPlayerDataChange, this)
+    eventBus.off('pickup_collected', this.onPickup, this)
     eventBus.off('ship_assets_ready', this.onShipAssetsReady, this)
+    if (Player.instance === this) Player.instance = null
   }
 
-  /** 资源异步加载完成 → 补刷新一次外观（贴图在启动阶段是异步加载的） */
+  /** 资源异步加载完成 → 刷新 this.ship（asset 变为真实资源）并补一次外观 */
   private onShipAssetsReady(): void {
     // 异步广播到达时节点可能已销毁 —— 先确认还活着
     if (!this.node?.isValid) return
+    const s = getShip(playerData.getSnapshot().shipId)
+    if (s) this.ship = s
     this.applyAppearance(playerData.getSnapshot())
   }
 
@@ -146,8 +174,8 @@ export class Player extends Component {
 
   /** 玩家数据变化：机型或火力等级变了就重装发射器 / 换外观 */
   private onPlayerDataChange(data: Readonly<IPlayerData>): void {
-    const cfg = getShipOr(data.shipId)
-    if (cfg.id !== this.ship.id) this.ship = cfg
+    const s = getShip(data.shipId) ?? getShip(SHIP_REGISTRY[0].id)!
+    if (s.config.id !== this.ship.config.id) this.ship = s
     this.applyLoadout(data)
     this.applyAppearance(data)
   }
@@ -163,12 +191,12 @@ export class Player extends Component {
    *    不 reset 就会残留在场上（且不报错，只表现为"换机型后多了一条光束"）。
    */
   private applyLoadout(data: Readonly<IPlayerData>): void {
-    const cfg = getShipOr(data.shipId)
-    if (cfg.id === this.loadoutKey) return // 加分 / 扣血 / 升级都不会走到下面
+    const cfg = getShip(data.shipId) ?? getShip(SHIP_REGISTRY[0].id)!
+    if (cfg.config.id === this.loadoutKey) return // 加分 / 扣血 / 升级都不会走到下面
 
     for (const e of this.emitters) e.reset()
-    this.emitters = cfg.emitters
-    this.loadoutKey = cfg.id
+    this.emitters = cfg.config.emitters
+    this.loadoutKey = cfg.config.id
     // ⚠️ 换机型必须让外观缓存失效：新机型的第 N 档是另一张图，
     //    但 stage 数字可能正好相同（都是 1）→ 不重置就会"换了飞机图没换"。
     this.appliedStage = -1
@@ -179,6 +207,29 @@ export class Player extends Component {
     for (const e of this.emitters) e.reset()
   }
 
+  /**
+   * 拾取道具 → 按类型生效（受当前机型发射器档位数上限约束）。
+   * 写回 PlayerData 会广播 player_data_change，外观（机身图 / 体型）自动更新，
+   * 且每帧传给发射器的 fireLevel 也随之抬高 → 三档火力 / 机身图 / scalePerLevel 全部生效。
+   */
+  private onPickup(data: PickupPayload): void {
+    switch (data.type) {
+      case PickupType.WEAPON_UP: {
+        const cur = playerData.getSnapshot().weaponLevel
+        let cap = 1
+        for (const e of this.emitters) cap = Math.max(cap, e.maxLevel)
+        if (cur >= cap) return
+        // 升几档由配置字面量 data.levels 决定（不实现其他 buff 时它恒为 1）
+        playerData.setPlayerData({ weaponLevel: cur + (data.levels ?? 1) })
+        break
+      }
+      // —— 以下 buff 暂未实现（按约定本次不做；PlayerData 也尚未扩展 heal / shield）——
+      // case PickupType.WEAPON_RAMPAGE: 拉满火力（cap = 各发射器 maxLevel 最大值）
+      // case PickupType.HEAL:    playerData.heal(data.heal ?? 0)
+      // case PickupType.SHIELD:  playerData.addShield(data.shield ?? 0)
+    }
+  }
+
   /** 上次应用过的外观档（-1 = 还没应用过）；用来避免每帧重复写 spriteFrame */
   private appliedStage = -1
 
@@ -186,8 +237,8 @@ export class Player extends Component {
    * 按【当前火力等级】换机身外观 —— 升级到一定档位就换个样子。
    *
    * 【外观档怎么来的】火力 3 档 ↔ 机身图 3 张，1:1，所以档号就是 `weaponLevel - 1`。
-   *   夹上下限与"缺图往前回退"都交给 `getShipSprite` —— 它是"档 → 图"的唯一入口，
-   *   本文件不自己算下标，将来档数与图数不等长时也不用改这里。
+   *   取图直接走 `this.ship.asset.sprites[stage]`（this.ship 来自 getShip 的嵌套大对象），
+   *   本文件不自己算下标，将来档数与图数不等长时再在此处加映射。
    *
    * 【为什么记 appliedStage】
    *   本方法挂在 `player_data_change` 上，而**加分 / 扣血也会广播这个事件** ——
@@ -200,7 +251,7 @@ export class Player extends Component {
   private applyAppearance(data: Readonly<IPlayerData>): void {
     // 体型：随火力等级【略微变大】—— 基础 scale + 每级增量。
     // 与外观解耦：外观按 stage 变（避免每帧重设 spriteFrame），体型按 level 变（每级都生效）。
-    const sizeScale = this.ship.scale + (data.weaponLevel - 1) * this.ship.scalePerLevel
+    const sizeScale = this.ship.config.scale + (data.weaponLevel - 1) * this.ship.config.scalePerLevel
     this.node.setScale(sizeScale, sizeScale, 1)
 
     // 机身 Sprite 直接取 Player 节点自身的 Sprite 组件（机身图就挂在这个节点上），
@@ -212,8 +263,8 @@ export class Player extends Component {
     const stage = Math.max(0, data.weaponLevel - 1)
     if (stage === this.appliedStage) return
 
-    const frame = getShipSprite(this.ship.id, stage)
-    // 该档没图（内容待补）→ 保留当前外观，不要把飞机变成空白
+    // 该档图来自资源包；资源未加载完（asset 为 null）或该档缺图（内容待补）→ 保留当前外观，不要把飞机变成空白
+    const frame = this.ship.asset?.sprites[stage] ?? null
     if (!frame) return
 
     sprite.spriteFrame = frame
@@ -245,7 +296,8 @@ export class Player extends Component {
       mods: NO_MODS,
       // 子弹外观来自【当前机型自己的资源】（ShipAsset.bulletPrefab）。
       // 激光机型没有子弹 → 为 null，BeamEmitter 不读这个字段，不受影响。
-      bulletPrefab: getShipPackageOr(this.ship.id)?.asset.bulletPrefab ?? null,
+      // 资源未加载完时 asset 为 null，这里回落 null，等 ship_assets_ready 后下次开火自然取到。
+      bulletPrefab: this.ship.asset?.bulletPrefab ?? null,
       // 激光判定入口（实体弹机型不使用它，但传出去无妨 —— 没用到就是 null 的开销）
       hitQuery: this.hitQuery,
     }
@@ -270,7 +322,6 @@ export class Player extends Component {
         this.keyRight = true
         break
       default:
-        this.handleDebugKey(e) // ⚠️ 临时调试用，见方法注释
         break
     }
   }
@@ -307,7 +358,7 @@ export class Player extends Component {
 
     const p = this.node.position
     // 移速读机型配置（只读模板），不读 PlayerData 里的副本 —— 避免第二份真值
-    const speed = this.ship.speed
+    const speed = this.ship.config.speed
     let newX = p.x + dirX * speed * deltaTime
     let newY = p.y + dirY * speed * deltaTime
 
@@ -315,27 +366,6 @@ export class Player extends Component {
     newY = Math.max(GameConfig.BOUND_MIN_Y, Math.min(GameConfig.BOUND_MAX_Y, newY))
 
     this.node.setPosition(newX, newY)
-  }
-
-  /**
-   * ⚠️ 临时调试：数字键 1~3 直接设置火力等级，用来肉眼确认各档的弹道形态与机身贴图。
-   * 键位范围跟着火力上限走（现在上限 3 = 发射器 levels.length）。
-   * 做完"升级道具（P 道具）"后，请连同 onKeyDown 里的调用一起删掉本方法。
-   */
-  private handleDebugKey(e: EventKeyboard): void {
-    // 非游玩状态（菜单 / 暂停 / 结算）不响应：否则菜单里按 1~3 会偷偷改火力等级
-    if (this.isPaused) return
-
-    const map: Record<number, number> = {
-      [KeyCode.DIGIT_1]: 1,
-      [KeyCode.DIGIT_2]: 2,
-      [KeyCode.DIGIT_3]: 3,
-    }
-    const weaponLevel = map[e.keyCode]
-    if (weaponLevel === undefined) return
-
-    playerData.setPlayerData({ weaponLevel })
-    console.log(`[Player][调试] 火力等级 → ${weaponLevel}`)
   }
 
   protected update(deltaTime: number): void {
