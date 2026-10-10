@@ -1,7 +1,6 @@
 import { GameResult, GameState, StateChangePayload } from '../data/GameState'
 import { eventBus } from '../core/EventBus'
 import { playerData } from '../data/PlayerData'
-import { GameConfig } from '../data/config/GameConfig'
 import { Component } from 'cc'
 /**
  * 游戏全局状态管理器（单例）
@@ -111,11 +110,7 @@ export class GameManager {
   private onEnemyDie(data: { enemyNode?: Component, score: number }): void {
     console.log('敌机死亡：', data)
     playerData.addScore(data.score)
-
-    // 临时胜利条件，等 WaveManager 用"波次清空"判定接管
-    if (playerData.getSnapshot().score >= GameConfig.WIN_SCORE) {
-      this.endGame(GameResult.WIN)
-    }
+    // 胜利判定已交由 WaveManager 的"波次清空"逻辑触发，本处只管加分
   }
 
   /**

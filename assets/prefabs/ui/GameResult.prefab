@@ -371,7 +371,7 @@
     },
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 194.12109375,
+      "width": 160,
       "height": 50.4
     },
     "_anchorPoint": {
@@ -407,7 +407,7 @@
       "b": 255,
       "a": 255
     },
-    "_string": "Game Title",
+    "_string": "游戏结束",
     "_horizontalAlign": 1,
     "_verticalAlign": 1,
     "_actualFontSize": 40,
@@ -530,7 +530,7 @@
     },
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 151.728515625,
+      "width": 120,
       "height": 50.4
     },
     "_anchorPoint": {
@@ -566,7 +566,7 @@
       "b": 255,
       "a": 255
     },
-    "_string": "Final Score",
+    "_string": "最终得分",
     "_horizontalAlign": 1,
     "_verticalAlign": 1,
     "_actualFontSize": 30,
@@ -785,7 +785,7 @@
       "b": 0,
       "a": 255
     },
-    "_string": "Reset Game",
+    "_string": "重新开始",
     "_horizontalAlign": 1,
     "_verticalAlign": 1,
     "_actualFontSize": 30,
@@ -1195,7 +1195,7 @@
       "b": 0,
       "a": 255
     },
-    "_string": "Menu",
+    "_string": "菜单",
     "_horizontalAlign": 1,
     "_verticalAlign": 1,
     "_actualFontSize": 30,
@@ -1569,7 +1569,6 @@
     "finalScoreLabel": {
       "__id__": 20
     },
-    "result": "NONE",
     "restartBtn": {
       "__id__": 34
     },

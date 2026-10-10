@@ -152,7 +152,7 @@
     },
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": -187.359375,
+      "x": -219,
       "y": 0,
       "z": 0
     },
@@ -193,7 +193,7 @@
     },
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 75.71875,
+      "width": 94,
       "height": 54.4
     },
     "_anchorPoint": {
@@ -229,7 +229,7 @@
       "b": 255,
       "a": 255
     },
-    "_string": "Level",
+    "_string": "等级：",
     "_horizontalAlign": 1,
     "_verticalAlign": 1,
     "_actualFontSize": 30,
@@ -311,7 +311,7 @@
     },
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": -78.3251953125,
+      "x": -75,
       "y": 0,
       "z": 0
     },
@@ -352,7 +352,7 @@
     },
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 42.349609375,
+      "width": 94,
       "height": 54.4
     },
     "_anchorPoint": {
@@ -388,7 +388,7 @@
       "b": 255,
       "a": 255
     },
-    "_string": "Hp",
+    "_string": "血量：",
     "_horizontalAlign": 1,
     "_verticalAlign": 1,
     "_actualFontSize": 30,
@@ -470,7 +470,7 @@
     },
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": 34.0341796875,
+      "x": 69,
       "y": 0,
       "z": 0
     },
@@ -511,7 +511,7 @@
     },
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 82.369140625,
+      "width": 94,
       "height": 54.4
     },
     "_anchorPoint": {
@@ -547,7 +547,7 @@
       "b": 255,
       "a": 255
     },
-    "_string": "Score",
+    "_string": "得分：",
     "_horizontalAlign": 1,
     "_verticalAlign": 1,
     "_actualFontSize": 30,
@@ -636,7 +636,7 @@
     },
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": 175.21875,
+      "x": 216,
       "y": 0,
       "z": 0
     },
@@ -763,7 +763,7 @@
       "b": 0,
       "a": 255
     },
-    "_string": "Pause",
+    "_string": "暂停",
     "_horizontalAlign": 1,
     "_verticalAlign": 1,
     "_actualFontSize": 25,
@@ -992,7 +992,7 @@
     },
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 450.4375,
+      "width": 532,
       "height": 100
     },
     "_anchorPoint": {

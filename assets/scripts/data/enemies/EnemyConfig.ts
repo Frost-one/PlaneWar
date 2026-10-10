@@ -67,10 +67,19 @@ export interface EnemyAssetPath {
   readonly sprite: string
 }
 
+/**
+ * 敌机 id 字面量联合（编译期唯一的敌机种类标识）。
+ *
+ * 三种敌机各自是一个可声明、不可拼错的唯一值；写错（如 'e_norml'）tsc 直接拦截，
+ * 不必等到运行时 getEnemy 返回 null 才暴露。它仍是 string 的子集，所以传给
+ * getEnemy(id: string) / Map<string> 等一律合法，且与项目"字符串 id"约定完全兼容。
+ */
+export type EnemyId = 'e_normal' | 'e_elite' | 'e_boss'
+
 /** 单种敌机的配置（只读模板） */
 export interface EnemyConfig {
-  /** 唯一标识：波次表 / EnemyManager 用它查表 */
-  readonly id: string
+  /** 唯一标识：波次表 / EnemyManager 用它查表；类型收窄为 EnemyId 字面量联合 */
+  readonly id: EnemyId
   /** 显示名（调试与编辑器里辨认用） */
   readonly name: string
   /** 血量模板；运行时 Enemy.hp 表示当前值，由它初始化 */

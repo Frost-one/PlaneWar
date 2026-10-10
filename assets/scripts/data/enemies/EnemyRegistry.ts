@@ -1,7 +1,7 @@
 import { SpriteFrame } from 'cc'
 import { eventBus } from '../../core/EventBus'
 import { loadAssetOrNull } from '../../core/utils/asset'
-import type { EnemyConfig } from './EnemyConfig'
+import type { EnemyConfig, EnemyId } from './EnemyConfig'
 import { ENEMY_NORMAL } from './EnemyNormal'
 import { ENEMY_ELITE } from './EnemyElite'
 import { ENEMY_BOSS } from './EnemyBoss'
@@ -60,7 +60,7 @@ export function isEnemyAssetsLoaded(): boolean {
  * 〔id 未知〕返回 null；〔资源未加载完〕仍返回对象、asset 为 null（配置始终可用）。
  * 内部从双存储 join 而成——对外只看得到这一个大对象。
  */
-export function getEnemy(id: string): EnemyPackage | null {
+export function getEnemy(id: EnemyId): EnemyPackage | null {
   const c = ENEMY_REGISTRY.find((x) => x.id === id)
   if (!c) return null
   return { config: c, asset: spriteCache.get(id) ?? null }

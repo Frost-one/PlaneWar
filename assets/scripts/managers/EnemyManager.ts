@@ -5,19 +5,18 @@ import { StateChangePayload, GameState } from '../data/GameState'
 import { Enemy } from '../entities/Enemy'
 import { poolManager } from '../core/PoolManager'
 import { type EnemyConfig } from '../data/enemies/EnemyConfig'
-import { ENEMY_REGISTRY } from '../data/enemies/EnemyRegistry'
 import { validateRequiredProps } from '../core/utils/validate'
 import type { HitRect, HitResult } from '../entities/emitters/Emitter'
 const { ccclass, property } = _decorator
 
 /**
  * 敌机生成管理器（挂在场景中的一个节点上）
- * - 按固定间隔在屏幕上方随机横向位置生成敌机
+ * - 【纯生成器】：只负责"造一架敌机 + 池回收 + 维护活体列表 + 激光命中查询"
  * - 敌机统一挂到【本组件所在节点】下，便于整体清场（本组件请挂在专用容器上）
- * - 仅在 PLAYING 状态下生成；菜单/暂停/结算时暂停生成
+ * - "何时刷 / 刷哪种" 由 WaveManager 驱动（调用本类的 spawn(cfg, x?)），本类不再自主调度
  *
  * 职责边界：本类只负责【生成】与【回收】敌机（节点来自对象池 poolManager，按 prefab 复用），
- * 不干涉敌机自身的移动、碰撞等行为（那是 Enemy 组件的事）。
+ * 不干涉敌机自身的移动、碰撞等行为（那是 Enemy 组件的事），也不决定出现时机。
  */
 @ccclass('EnemyManager')
 export class EnemyManager extends Component {
@@ -45,13 +44,6 @@ export class EnemyManager extends Component {
     return EnemyManager.instance
   }
 
-  /** 生成间隔（秒）：每隔多少秒生成一架 */
-  @property
-  spawnInterval = 1
-
-  /** 累计生成计时 */
-  private timer = 0
-
   /**
    * 共享敌机 prefab（三种敌机合并为 1 个，外观靠运行时换 SpriteFrame）。
    * 【在编辑器里拖入本字段】，不走 resources.load —— 它小且稳定，
@@ -68,24 +60,11 @@ export class EnemyManager extends Component {
   @property(Prefab)
   enemyPrefab: Prefab | null = null
 
-  /** 是否处于暂停（冻结）状态；启动时为 true（停在菜单，不生成） */
-  private isPaused = true
-
   /**
    * 当前存活的敌机列表。
    * 仅用于追踪与统一回收；实际节点来自 poolManager（按 prefab 复用），不再每次 instantiate。
    */
   private enemyList: Node[] = []
-
-  /**
-   * 出生权重（临时，等 WaveManager 时迁走）。
-   * 用 id 做 key 的 Record，避免与 ENEMY_CONFIGS 顺序对齐的下标错位隐患。
-   */
-  private static readonly SPAWN_WEIGHTS: Record<string, number> = {
-    e_normal: 6,
-    e_elite: 3,
-    e_boss: 0, // 临时：Boss 不进随机池，等 WaveManager 单独控制出现
-  }
 
   /**
    * 启动校验：共享敌机 prefab 现由编辑器拖入，漏了直接抛异常。
@@ -165,81 +144,33 @@ export class EnemyManager extends Component {
   }
 
   /**
-   * 状态切换：决定"要不要继续吐敌机"，以及生成计时的生死。
-   *
-   * 暂停采用「时间停止」语义（整体冻结、恢复后接着走）：
-   *   - PLAYING → PAUSED：计时器**冻结、保留余量**
-   *   - PAUSED  → PLAYING：计时器**从冻结处接着走**
-   *   两者合起来即"时间停止"：暂停期间不推进，恢复后无缝续上。
-   *   例：spawnInterval = 1，暂停时已累积 0.9s → 恢复后 0.1s 即出下一架。
-   *
-   * 其余迁移都视为「本局开始/中断」，计时一律清零：
-   *   - → PLAYING（来自 MENU / OVER）：新的一局，给予完整间隔的喘息期
-   *   - → MENU / OVER：本局作废，清掉残留进度，避免影响下一局
+   * 状态切换：只在"本局开始 / 回菜单"时清掉残留敌机；
+   * 暂停/恢复不动场上敌机（冻结由实体层各自处理），进入结算保留战场画面。
+   * 生成时机已交由 WaveManager 驱动，本类不再自行计时或调度。
    */
   private onStateChange({ oldState, newState }: StateChangePayload): void {
-    this.isPaused = newState !== GameState.PLAYING
-
-    // 「时间停止」区间：PAUSED 的进入与离开都不动计时器，也不清场
-    if (oldState === GameState.PAUSED || newState === GameState.PAUSED) {
-      return
-    }
-
-    // 其余所有迁移：计时清零
-    this.timer = 0
-
-    // 进入 OVER 时暂不清场：保留结算瞬间的战场画面
-    if (newState === GameState.OVER) {
-      return
-    }
-
+    // 暂停/恢复：不动场上敌机
+    if (newState === GameState.PAUSED || oldState === GameState.PAUSED) return
+    // 进入结算：保留战场画面
+    if (newState === GameState.OVER) return
     // 其余迁移（新开局 / 回菜单）：清空残留敌机
     this.clearEnemies()
   }
 
-  update(deltaTime: number): void {
-    if (this.isPaused) return
-
-    this.timer += deltaTime
-    if (this.timer >= this.spawnInterval) {
-      this.timer -= this.spawnInterval
-      this.spawnEnemy()
-    }
-  }
-
   /**
-   * 按权重随机抽一种敌机，返回对应的配置。
+   * 生成一架敌机（对外入口，由 WaveManager 调用）。
+   * 不再自主决定时机/种类——调用方传入配置与可选横向位置。
    *
-   * 累加区间法：把各 cfg 的 SPAWN_WEIGHTS[id] 首尾相接铺成 [0, total) 上的若干段，
-   * 随机点落在哪段就取哪个 cfg。权重用 id 做 key 的 Record（SPAWN_WEIGHTS），
-   * 不再与 ENEMY_REGISTRY 顺序对齐，不存在"下标错位"隐患；缺省权重回落 1。
+   * @param cfg 敌机配置（决定数值 + 外观）
+   * @param x   固定横向位置；省略时：居中对齐敌机取 x=0，其余在玩家横向范围内随机
    */
-  private rollEnemyConfig(): EnemyConfig {
-    let total = 0
-    for (const c of ENEMY_REGISTRY) total += EnemyManager.SPAWN_WEIGHTS[c.id] ?? 1
-    if (total <= 0) return ENEMY_REGISTRY[0]
-
-    let roll = Math.random() * total
-    for (const c of ENEMY_REGISTRY) {
-      roll -= EnemyManager.SPAWN_WEIGHTS[c.id] ?? 1
-      if (roll < 0) return c
-    }
-    // 兜底：浮点误差导致未命中任何区间时，取最后一个
-    return ENEMY_REGISTRY[ENEMY_REGISTRY.length - 1]
-  }
-
-  /** 在屏幕上方随机横向位置生成一架敌机 */
-  private spawnEnemy(): void {
-    // ① 抽签：按权重决定这一架是哪一种（数值 + 外观一并定下）
-    const cfg = this.rollEnemyConfig()
-    if (!cfg) return
-
-    // ② 取共享的单一敌机 prefab（三种敌机合并为 1 个，外观靠运行时换 SpriteFrame）
+  public spawn(cfg: EnemyConfig, x?: number): void {
+    // 取共享的单一敌机 prefab（三种敌机合并为 1 个，外观靠运行时换 SpriteFrame）
     const prefab = this.enemyPrefab
     if (!prefab) return
 
-    // ③ 根据 prefab【从对象池借出】敌机结点（池空才新建），统一挂到本组件所在节点下
-    //    （本组件就该挂在专用容器上，场景里是 GameRoot/Enemies）
+    // 根据 prefab【从对象池借出】敌机结点（池空才新建），统一挂到本组件所在节点下
+    // （本组件就该挂在专用容器上，场景里是 GameRoot/Enemies）
     const enemy = poolManager.acquire(prefab, this.node)
     if (!enemy) return
 
@@ -247,9 +178,9 @@ export class EnemyManager extends Component {
     //
     // ⚠️ 居中对齐的敌机（如 BOSS，配置里 spawnCentered=true）例外：它不会穿屏，
     //    随机 x 会让它永久歪在屏幕一侧，所以一律取屏幕中心 x=0。
-    const spawnX = cfg.spawnCentered
+    const spawnX = x ?? (cfg.spawnCentered
       ? 0
-      : math.randomRange(GameConfig.BOUND_MIN_X, GameConfig.BOUND_MAX_X)
+      : math.randomRange(GameConfig.BOUND_MIN_X, GameConfig.BOUND_MAX_X))
 
     const spawnY = GameConfig.BOUND_MAX_Y + 50
     enemy.setPosition(spawnX, spawnY)
@@ -260,6 +191,14 @@ export class EnemyManager extends Component {
     if (enemyComp) enemyComp.init(this, cfg, prefab)
     // 纳入追踪列表，供后续统一回收
     this.enemyList.push(enemy)
+  }
+
+  /**
+   * 场上活敌数量（通关判定用）。
+   * 直接读 enemyList 长度，O(1)，不每帧遍历节点。
+   */
+  public getAliveCount(): number {
+    return this.enemyList.length
   }
 
   // ==================== 回收 ====================

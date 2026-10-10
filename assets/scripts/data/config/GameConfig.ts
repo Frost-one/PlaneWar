@@ -22,8 +22,4 @@ export class GameConfig {
   static readonly PICKUP_MAGNET_RADIUS = 140
   /** 磁铁吸附速度（px/s）：足够快，玩家无法甩开 */
   static readonly PICKUP_MAGNET_SPEED = 620
-
-  // —— 游戏流程 ——
-  /** 临时胜利阈值：累计分数达到即通关，等 WaveManager 用"波次清空"判定接管 */
-  static readonly WIN_SCORE = 500
 }
