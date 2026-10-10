@@ -241,6 +241,7 @@ export class Bullet extends Component {
     const p = this.node.position
     if (
       p.y > GameConfig.BOUND_MAX_Y + 5 ||
+      p.y < GameConfig.BOUND_MIN_Y - 5 ||
       Math.abs(p.x) > GameConfig.BOUND_MAX_X + 50
     ) {
       this.despawn()
@@ -261,8 +262,21 @@ export class Bullet extends Component {
   }
 
   onBeginContact(selfCollider2D: Collider2D, otherCollider: Collider2D) {
-    if (otherCollider.group !== PHYSICS_GROUP.ENEMY) return
+    // 玩家子弹击中敌机：伤害由敌机自己的 onBeginContact 结算，这里只管子弹自身的回收 / 贯穿
+    if (otherCollider.group === PHYSICS_GROUP.ENEMY) {
+      this.onHitTarget()
+      return
+    }
+    // 敌弹击中玩家：玩家没有碰撞回调，由子弹这里上报 player_hit（扣血在 GameManager）
+    if (otherCollider.group === PHYSICS_GROUP.PLAYER) {
+      eventBus.emit('player_hit', { playerNode: otherCollider.node, damage: this.damage })
+      this.onHitTarget()
+      return
+    }
+  }
 
+  /** 命中任意目标后的子弹自身处理：按 pierce 决定销毁还是贯穿 */
+  private onHitTarget(): void {
     if (this.pierce <= 0) {
       this.scheduleOnce(() => {
         this.despawn()

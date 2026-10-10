@@ -33,7 +33,7 @@ export const SHIP_GREEN: ShipConfig = {
   scale: 3,
   scalePerLevel: 0.1,
   fireStyleName: '贯穿',
-  emitters: [new LaneEmitter('main', LEVELS)],
+  emitters: [() => new LaneEmitter('main', LEVELS)],
 
   // 资源：与数值同处一个文件
   assetPaths: {

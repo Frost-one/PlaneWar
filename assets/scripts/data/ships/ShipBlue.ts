@@ -55,7 +55,7 @@ export const SHIP_BLUE: ShipConfig = {
   scale: 3,
   scalePerLevel: 0.1,
   fireStyleName: '激光',
-  emitters: [new BeamEmitter('beam', LEVELS)],
+  emitters: [() => new BeamEmitter('beam', LEVELS)],
 
   // 资源：激光机【没有 bullet】，用 beam 代替 —— 不写就是没有，不用塞假值
   assetPaths: {

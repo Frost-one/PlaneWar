@@ -1,4 +1,5 @@
 import { type EnemyConfig } from './EnemyConfig'
+import { LaneEmitter } from '../../entities/emitters/LaneEmitter'
 
 /**
  * 精英机：正弦横摆、血量厚、掉落率高。
@@ -27,5 +28,19 @@ export const ENEMY_ELITE: EnemyConfig = {
   dropChance: 0.35,
   isBoss: false,
   scale: 5,
-  assetPaths: { sprite: 'enemies/enemy_elite/ship_0016/spriteFrame' },
+  assetPaths: {
+    sprite: 'enemies/enemy_elite/ship_0016/spriteFrame',
+    bullet: 'enemies/enemy_elite/Enemy_Bullet',
+  },
+  /**
+   * 开火：一发朝下的红色小圆，间隔适中、易躲。
+   * 弹丸伤害（10）与撞击伤害（cfg.damage=40）解耦——弹幕单颗只扣 10，符合"体积小易躲"。
+   * emitters 是【工厂闭包】数组：箭头函数延迟到敌机生成时才 new 出实例（见 Enemy.init），
+   * 配置加载时只创建函数、不创建实例。
+   */
+  emitters: [
+    () => new LaneEmitter('e_elite_main', [
+      { damage: 10, interval: 1.3, speed: 240, baseAngle: 180 }
+    ]),
+  ],
 }

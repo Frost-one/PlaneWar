@@ -62,10 +62,10 @@ export const SHIP_RED: ShipConfig = {
    *
    * 【将来要加僚机长什么样】（先不实现，只是说明扩展点）
    *   emitters: [
-   *     new LaneEmitter('main', LEVELS),
-   *     new LaneEmitter('wing', WING_LEVELS, 3),  // ← 第三参数 = 火力 3 级起才开火
+   *     () => new LaneEmitter('main', LEVELS),
+   *     () => new LaneEmitter('wing', WING_LEVELS, 3),  // ← 第三参数 = 火力 3 级起才开火
    *   ],
    *   注意：没有引入任何新概念，emitters 数组多一个元素而已，Player 的 tick 循环不用改。
    */
-  emitters: [new LaneEmitter('main', LEVELS)],
+  emitters: [() => new LaneEmitter('main', LEVELS)],
 }

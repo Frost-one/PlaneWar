@@ -1,4 +1,4 @@
-import { _decorator, Component, EventKeyboard, Input, input, KeyCode,  Sprite } from 'cc'
+import { _decorator, BoxCollider2D, CircleCollider2D, Color, Component, EventKeyboard, Graphics, Input, input, KeyCode, Node, Sprite } from 'cc'
 import { GameConfig } from '../data/config/GameConfig'
 import { eventBus } from '../core/EventBus'
 import { StateChangePayload, GameState } from '../data/GameState'
@@ -116,6 +116,7 @@ export class Player extends Component {
     const snap = playerData.getSnapshot()
     this.applyLoadout(snap)
     this.applyAppearance(snap)
+    this.setupHitboxIndicator()
   }
 
   protected onDisable(): void {
@@ -195,7 +196,11 @@ export class Player extends Component {
     if (cfg.config.id === this.loadoutKey) return // 加分 / 扣血 / 升级都不会走到下面
 
     for (const e of this.emitters) e.reset()
-    this.emitters = cfg.config.emitters
+    // ⚠️ 配置里的 emitters 是【工厂闭包数组】(每项是 `() => new XxxEmitter(...)`)，
+    //   装配时调用闭包生成真正的实例；与敌机共用同一套写法（见 Enemy.init）。
+    //   写配置只管 `emitters: [() => new LaneEmitter('main', LEVELS)]`，
+    //   不再有 createEmitters 特殊写法，也不再需要 clone() 这种只为模板存在的接口方法。
+    this.emitters = cfg.config.emitters ? cfg.config.emitters.map((make) => make()) : []
     this.loadoutKey = cfg.config.id
     // ⚠️ 换机型必须让外观缓存失效：新机型的第 N 档是另一张图，
     //    但 stage 数字可能正好相同（都是 1）→ 不重置就会"换了飞机图没换"。
@@ -269,6 +274,55 @@ export class Player extends Component {
 
     sprite.spriteFrame = frame
     this.appliedStage = stage
+  }
+
+  /**
+   * 在玩家中心画一个"判定圈"高亮（参考雷霆战机）：
+   * 直观告诉玩家【撞到这个圈就会扣血】，而圈远小于机体贴图。
+   *
+   * 【为什么用 Graphics 现画，而不在 prefab 里拖一个圈】
+   *   ① 判定框是运行时随 Collider 走的（玩家改成 CircleCollider 后半径在编辑器里调），
+   *      现画保证"画出来的圈 == 实际碰撞圈"，不会出现"显示和实际不一样大"；
+   *   ② 玩家 prefab 由编辑器管、AI 不碰 —— 用代码建子节点零编辑器接线。
+   *
+   * 子节点随玩家移动、并随机型 scale 等比放大，换机型 / 升级变大后圈也跟着变大，永远贴合。
+   */
+  private setupHitboxIndicator(): void {
+    const circle = this.getComponent(CircleCollider2D)
+    const box = this.getComponent(BoxCollider2D)
+    if (!circle && !box) return
+
+    const indicator = new Node('HitboxIndicator')
+    indicator.parent = this.node
+    const g = indicator.addComponent(Graphics)
+
+    const RING = new Color(255, 70, 70, 255)
+    const FILL = new Color(255, 70, 70, 45)
+
+    if (circle) {
+      const r = circle.radius
+      const ox = circle.offset.x
+      const oy = circle.offset.y
+      g.fillColor = FILL
+      g.circle(ox, oy, r)
+      g.fill()
+      g.lineWidth = 2
+      g.strokeColor = RING
+      g.circle(ox, oy, r)
+      g.stroke()
+    } else if (box) {
+      const w = box.size.width
+      const h = box.size.height
+      const ox = box.offset.x
+      const oy = box.offset.y
+      g.fillColor = FILL
+      g.rect(ox - w * 0.5, oy - h * 0.5, w, h)
+      g.fill()
+      g.lineWidth = 2
+      g.strokeColor = RING
+      g.rect(ox - w * 0.5, oy - h * 0.5, w, h)
+      g.stroke()
+    }
   }
 
   /**

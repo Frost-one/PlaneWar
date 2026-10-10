@@ -1,7 +1,7 @@
 [
   {
     "__type__": "cc.Prefab",
-    "_name": "Bullet_1",
+    "_name": "Enemy_Bullet",
     "_objFlags": 0,
     "__editorExtras__": {},
     "_native": "",
@@ -13,7 +13,7 @@
   },
   {
     "__type__": "cc.Node",
-    "_name": "Bullet_1",
+    "_name": "Enemy_Bullet",
     "_objFlags": 0,
     "__editorExtras__": {},
     "_parent": null,
@@ -54,8 +54,8 @@
     },
     "_lscale": {
       "__type__": "cc.Vec3",
-      "x": 2,
-      "y": 4,
+      "x": 1,
+      "y": 1,
       "z": 1
     },
     "_mobility": 0,
@@ -82,8 +82,8 @@
     },
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 6,
-      "height": 16
+      "width": 50,
+      "height": 50
     },
     "_anchorPoint": {
       "__type__": "cc.Vec2",
@@ -114,17 +114,17 @@
     "_color": {
       "__type__": "cc.Color",
       "r": 255,
-      "g": 255,
-      "b": 255,
+      "g": 0,
+      "b": 0,
       "a": 255
     },
     "_spriteFrame": {
-      "__uuid__": "ec9b119e-1577-46e5-bad1-f61d85a6b3c0@f9941",
+      "__uuid__": "24c419ea-63a8-4ea1-a9d0-7fc469489bbc@f9941",
       "__expectedType__": "cc.SpriteFrame"
     },
     "_type": 0,
     "_fillType": 0,
-    "_sizeMode": 1,
+    "_sizeMode": 0,
     "_fillCenter": {
       "__type__": "cc.Vec2",
       "x": 0,
@@ -172,20 +172,20 @@
       "__id__": 9
     },
     "tag": 0,
-    "_group": 4,
+    "_group": 16,
     "_density": 1,
     "_sensor": true,
     "_friction": 0.2,
     "_restitution": 0,
     "_offset": {
       "__type__": "cc.Vec2",
-      "x": 0,
-      "y": 0
+      "x": -0.4,
+      "y": 1
     },
     "_size": {
       "__type__": "cc.Size",
-      "width": 6,
-      "height": 16
+      "width": 10,
+      "height": 10
     },
     "_id": ""
   },

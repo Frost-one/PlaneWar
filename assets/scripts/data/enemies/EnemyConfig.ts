@@ -19,6 +19,7 @@
  */
 
 import type { Node } from 'cc'
+import type { Emitter } from '../../entities/emitters/Emitter'
 
 /**
  * 敌机移动所需的上下文（每帧由 Enemy 传入）。
@@ -65,6 +66,12 @@ export type EnemyMover = (node: Node, s: EnemyMoveState) => void
 export interface EnemyAssetPath {
   /** 机身贴图（SpriteFrame）。路径相对 assets/resources/，取 SpriteFrame 必须带 /spriteFrame 后缀 */
   readonly sprite: string
+  /**
+   * 子弹 prefab（可选）路径：敌机开火用的实体弹。
+   * 路径相对 assets/resources/、不带扩展名（见 core/utils/asset 的说明）。
+   * 普通机暂无子弹，省略即可。
+   */
+  readonly bullet?: string
 }
 
 /**
@@ -113,6 +120,26 @@ export interface EnemyConfig {
   readonly dropChance: number
   /** 是否 BOSS：多阶段、血条、清场例外等行为据此判断 */
   readonly isBoss: boolean
+
+  /**
+   * 开火装配（可选）：这架敌机有哪些发射器【同时】工作。
+   * 这是「角色能力组合」思路的体现 —— 一个单位"能做什么"由一组可插拔的能力
+   * 模块（发射器）拼出来，而非写死在单位的类里；与玩家侧 ShipConfig.emitters 完全同形。
+   *
+   * 与 ShipConfig.emitters **同形**：都是【工厂闭包数组】
+   * （每项是 `() => new XxxEmitter(...)`）。实体在装配时调用这些闭包生成真正
+   * 的发射器实例（见 Enemy.init）：
+   *   - 同型敌机不共享冷却（每架各自 new）；
+   *   - 同一 prefab 被池复用、被改派给不同 cfg 时，靠"配置引用相等"复用或重建（见 Enemy.init）。
+   * 省略 = 该敌机不开火（如普通机）。
+   *
+   * 【为什么用箭头函数闭包，而不是把 `new XxxEmitter` 直接写在配置里】
+   *   闭包把 `new` 延迟到实体生成的那一刻才执行；配置模块加载时只创建函数、
+   *   不创建发射器实例。这样既消灭了"只为被 clone 而存在的死模板实例"，
+   *   又不必引入 `EmitterSpec` 之类的中心分发文件——"哪种发射器"直接写死在
+   *   闭包里的 `new` 上，实体侧只需 `cfg.emitters.map((make) => make())` 一句。
+   */
+  readonly emitters?: readonly (() => Emitter)[]
   /**
    * 资源路径：与数值写在同一个文件里（"一种敌机一套数据"）。
    *

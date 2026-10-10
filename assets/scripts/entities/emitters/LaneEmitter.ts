@@ -29,6 +29,11 @@ export interface LaneLevel {
   readonly laneWidth?: number
   /** 可穿透目标数（省略 = 0 即不穿透） */
   readonly pierce?: number
+  /**
+   * 弹道基准朝向（度，0 = 垂直向上，180 = 垂直向下）；省略 = 0。
+   * 玩家子弹默认朝上；敌机子弹要朝下发射，设 180 即可，扇形在此基准上向两侧铺开。
+   */
+  readonly baseAngle?: number
 }
 
 /**
@@ -40,8 +45,8 @@ export interface LaneLevel {
  *   斜向平行：       两者都 > 0
  *
  * 【生命周期：装配期 vs 运行期】
- *   - 装配期（模块加载一次）：`new LaneEmitter('main', LEVELS)` —— 把整份档位表交进来，
- *     得到一个发射器对象。此时它什么都不做，只是"待命"。
+ *   - 装配期（实体生成时）：配置里的工厂闭包 `() => new LaneEmitter(...)` 被调用，
+ *     把整份档位表交进来，得到一个发射器实例。此时它什么都不做，只是"待命"。
  *   - 运行期（每帧）：`tick(dt, ctx)` —— 自己攒冷却、自己看当前是第几档、到点了自己生成子弹。
  *
  * 【冷却为什么是对象自己的字段】
@@ -108,6 +113,7 @@ export class LaneEmitter implements Emitter {
     const count = Math.max(1, (level.count ?? 1) + ctx.mods.extraCount)
     const totalAngle = level.spreadAngle ?? 0
     const totalWidth = level.laneWidth ?? 0
+    const baseAngle = level.baseAngle ?? 0
     const damage = Math.round(level.damage * ctx.mods.damageMultiplier)
 
     for (let i = 0; i < count; i++) {
@@ -120,7 +126,7 @@ export class LaneEmitter implements Emitter {
         ctx.x,
         ctx.y,
         {
-          angleDeg: t * totalAngle,
+          angleDeg: baseAngle + t * totalAngle,
           offsetX: t * totalWidth,
           speed: level.speed,
           damage,

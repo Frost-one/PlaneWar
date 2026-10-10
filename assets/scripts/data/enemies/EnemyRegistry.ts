@@ -1,4 +1,4 @@
-import { SpriteFrame } from 'cc'
+import { Prefab, SpriteFrame } from 'cc'
 import { eventBus } from '../../core/EventBus'
 import { loadAssetOrNull } from '../../core/utils/asset'
 import type { EnemyConfig, EnemyId } from './EnemyConfig'
@@ -33,6 +33,8 @@ export const ENEMY_REGISTRY: readonly EnemyConfig[] = [
 /** 一架敌机的运行时资源（由启动阶段加载产生，之后全局同步取用） */
 export interface EnemyAsset {
   readonly sprite: SpriteFrame | null
+  /** 子弹 prefab：敌机开火用（普通机为 null） */
+  readonly bulletPrefab: Prefab | null
 }
 
 /**
@@ -75,10 +77,14 @@ export async function loadEnemyAssets(): Promise<void> {
   await Promise.all(
     ENEMY_REGISTRY.map(async (cfg) => {
       const sprite = await loadAssetOrNull(cfg.assetPaths.sprite, SpriteFrame)
+      const bulletPrefab = await loadAssetOrNull(cfg.assetPaths.bullet, Prefab)
       if (!sprite) {
         console.error(`[enemies] ${cfg.id} 贴图加载失败：${cfg.assetPaths.sprite}`)
       }
-      spriteCache.set(cfg.id, { sprite })
+      if (cfg.assetPaths.bullet && !bulletPrefab) {
+        console.error(`[enemies] ${cfg.id} 子弹加载失败：${cfg.assetPaths.bullet}`)
+      }
+      spriteCache.set(cfg.id, { sprite, bulletPrefab })
     }),
   )
   console.log(`[enemies] 资源加载完成：贴图 ${spriteCache.size}/${ENEMY_REGISTRY.length}`)

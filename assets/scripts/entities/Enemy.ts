@@ -8,6 +8,9 @@ import type { EnemyManager } from '../managers/EnemyManager'
 import { Bullet } from './Bullet'
 import { PHYSICS_GROUP } from '../data/config/PhysicsGroups'
 import { getEnemy } from '../data/enemies/EnemyRegistry'
+import { BulletManager } from '../managers/BulletManager'
+import type { Emitter, FireContext } from './emitters/Emitter'
+import { NO_MODS } from './emitters/Emitter'
 const { ccclass, property } = _decorator
 
 /**
@@ -79,6 +82,15 @@ export class Enemy extends Component {
   /** 是否已归还对象池：防止「出界销毁 / 被击杀 / 撞机」等多条路径重复回收 */
   private released = false
 
+  /** 子弹管理器（运行期单例），敌机开火用；init 时取 */
+  private bulletManager: BulletManager | null = null
+  /** 本敌机使用的子弹 prefab（来自资源，可能为 null = 不开火） */
+  private bulletPrefab: Prefab | null = null
+  /** 本敌机的发射器（每架独立实例，避免同型敌机共享冷却）；init 时调用配置里的工厂闭包生成 */
+  private emitters: readonly Emitter[] = []
+  /** 当前 emitterFactories 引用（= cfg.emitters 工厂闭包数组，模块级单例）：用于判断池中复用时是否同一配置，决定 reset 复用还是重建 */
+  private emitterFactories: readonly (() => Emitter)[] | undefined = undefined
+
   /**
    * 敌机的初始化入口，由 EnemyManager 在生成后立即调用。
    *
@@ -139,6 +151,21 @@ export class Enemy extends Component {
     if (ui && box) {
       const k = cfg.hitScale ?? 1
       box.size = new Size(ui.width * k, ui.height * k)
+    }
+
+    // 6. 开火相关：取子弹管理器 + 本敌机子弹 prefab + 发射器实例
+    this.bulletManager = BulletManager.getInstance()
+    this.bulletPrefab = getEnemy(cfg.id)?.asset?.bulletPrefab ?? null
+    // ⚠️ 配置里的 emitters 是【工厂闭包数组】(每项是 `() => new XxxEmitter(...)`)，
+    //    模块加载时只创建函数、不创建实例；真正的 new 延迟到敌机生成这一刻（箭头函数闭包）。
+    //    同一敌机 prefab 被对象池复用、可能被派给不同 cfg：
+    //      - 配置引用相同（cfg.emitters 是模块级单例，引用稳定）→ 只 reset 复用，省去每次 new；
+    //      - 配置引用不同（池中节点被改派给另一种敌机）→ 重新调用工厂闭包生成实例。
+    if (this.emitterFactories === cfg.emitters) {
+      for (const e of this.emitters) e.reset()
+    } else {
+      this.emitters = cfg.emitters ? cfg.emitters.map((make) => make()) : []
+      this.emitterFactories = cfg.emitters
     }
   }
 
@@ -210,12 +237,36 @@ export class Enemy extends Component {
       bounds: Enemy.BOUNDS,
     })
 
+    // 开火：推进本敌机的发射器（普通机 emitters 为空 → 不做事）
+    this.tickEmitters(deltaTime)
+
     // —— 超出玩家可视区下界则回收 ——
     // ⚠️ 读节点当前 y 判断，而不是移动函数的返回值：移动函数直接写位置，不回传。
     if (this.node.position.y < GameConfig.BOUND_MIN_Y - Enemy.DESTROY_EXTRA) {
       this.despawn()
       return
     }
+  }
+
+  /**
+   * 把本敌机的发射器推进一帧（敌机开火的唯一入口）。
+   *
+   * 与 Player.tickEmitters 同构：只是子弹 prefab 来自本敌机资源、敌弹朝下、无激光判定。
+   * 普通机 emitters 为空 → 直接返回，不做任何事。
+   */
+  private tickEmitters(dt: number): void {
+    if (this.emitters.length === 0 || !this.bulletManager || !this.bulletPrefab) return
+    const p = this.node.position
+    const ctx: FireContext = {
+      fireLevel: 1,                 // 敌机无火力升级，恒用第 1 档
+      x: p.x,
+      y: p.y - 16,                  // 出生点略低于机头，避免压在机身里
+      bulletManager: this.bulletManager,
+      bulletPrefab: this.bulletPrefab,
+      mods: NO_MODS,
+      hitQuery: null,               // 实体弹不需要激光命中查询
+    }
+    for (const e of this.emitters) e.tick(dt, ctx)
   }
 
   /**
@@ -243,6 +294,7 @@ export class Enemy extends Component {
   public despawn(): void {
     if (this.released) return
     this.released = true
+    for (const e of this.emitters) e.reset()
     this.manager?.releaseEnemy(this.node, this.prefab!)
   }
 

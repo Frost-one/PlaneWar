@@ -2,12 +2,12 @@
   "ver": "1.1.50",
   "importer": "prefab",
   "imported": true,
-  "uuid": "bc86e455-9123-4828-99e0-61b15c02e3e3",
+  "uuid": "9d6092ef-1803-459e-ad34-0b5b8fa5c647",
   "files": [
     ".json"
   ],
   "subMetas": {},
   "userData": {
-    "syncNodeName": "Bullet_1"
+    "syncNodeName": "Enemy_Bullet"
   }
 }
