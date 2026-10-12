@@ -1,4 +1,6 @@
-# PlaneWar
+# PlaneWar（开发文档导航）
+
+> 面向 GitHub 访客的项目总介绍见根目录 **[`../README.md`](../README.md)**（功能特性、架构概览、运行与构建、已知限制）。
 
 一款基于 Cocos Creator 的纵版卷轴射击游戏（飞机大战），玩法参照《雷霆战机》。
 
@@ -50,7 +52,7 @@
 ```
 assets/
 ├── scenes/      场景
-├── scripts/     全部 TypeScript（35 个）
+├── scripts/     全部 TypeScript（56 个）
 ├── resources/   运行时按 id 动态加载的资源
 ├── prefabs/     飞船 / 敌机 / 子弹 / UI 预制体
 └── scripts/ 之外的 Tilemap、Tiles 为地图瓦片图集
