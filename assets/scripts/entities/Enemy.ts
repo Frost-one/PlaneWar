@@ -1,13 +1,16 @@
 import { _decorator, BoxCollider2D, Collider2D, Component, Contact2DType, Node, Prefab, Size, Sprite, UITransform } from 'cc'
 import { GameConfig } from '../data/config/GameConfig'
 import { eventBus } from '../core/EventBus'
-import { StateChangePayload, GameState } from '../data/GameState'
+import { GameState } from '../data/GameState'
+import type { StateChangePayload } from '../core/GameEvent'
 import { poolManager } from '../core/PoolManager'
-import { type EnemyConfig, type EnemyBounds, type EnemyMover } from '../data/enemies/EnemyConfig'
+import type { EnemyConfig, EnemyBounds, EnemyMover } from '../data/enemies/EnemyConfig'
 import type { EnemyManager } from '../managers/EnemyManager'
 import { Bullet } from './Bullet'
 import { PHYSICS_GROUP } from '../data/config/PhysicsGroups'
 import { getEnemy } from '../data/enemies/EnemyRegistry'
+import { createEnemyAI } from './ai/EnemyAI'
+import type { EnemyAI } from './ai/EnemyAI'
 import { BulletManager } from '../managers/BulletManager'
 import type { Emitter, FireContext } from './emitters/Emitter'
 import { NO_MODS } from './emitters/Emitter'
@@ -45,6 +48,12 @@ export class Enemy extends Component {
 
   // —— 轨迹（由 init 从 cfg 拷入）——
   private move: EnemyMover | null = null
+
+  // —— 策略 + 能力目录（config 只声明能力，编排交给 AI）——
+  /** 本敌机的配置引用（能力目录：moves / emitters） */
+  private config!: EnemyConfig
+  /** 本敌机的"脑子"：每帧由 Enemy.update 委托决策（选 move / 选 weapon） */
+  private ai!: EnemyAI
 
   /** 可活动边界：每帧传给移动函数，供正弦做对称夹紧 */
   private static readonly BOUNDS: EnemyBounds = {
@@ -86,10 +95,15 @@ export class Enemy extends Component {
   private bulletManager: BulletManager | null = null
   /** 本敌机使用的子弹 prefab（来自资源，可能为 null = 不开火） */
   private bulletPrefab: Prefab | null = null
-  /** 本敌机的发射器（每架独立实例，避免同型敌机共享冷却）；init 时调用配置里的工厂闭包生成 */
-  private emitters: readonly Emitter[] = []
-  /** 当前 emitterFactories 引用（= cfg.emitters 工厂闭包数组，模块级单例）：用于判断池中复用时是否同一配置，决定 reset 复用还是重建 */
-  private emitterFactories: readonly (() => Emitter)[] | undefined = undefined
+  /** 本敌机当前激活的发射器（每架独立实例，避免同型敌机共享冷却）；由 AI 经 setWeapons 装配 */
+  private activeEmitters: Emitter[] = []
+  /**
+   * 当前激活的发射器 key 列表（与 config.emitters 对齐）；用于对象池复用判定：
+   * 同 cfg + 同 key 组合 → 复用现有实例（不动冷却）；cfg 变或 key 变 → 重建。
+   */
+  private weaponKeys: string[] | null = null
+  /** 上次装配时引用的 config.emitters（模块级单例）；用于判断池中节点被改派不同 cfg 时是否需重建 */
+  private emitterConfigRef: Record<string, () => Emitter> | undefined = undefined
 
   /**
    * 敌机的初始化入口，由 EnemyManager 在生成后立即调用。
@@ -120,13 +134,20 @@ export class Enemy extends Component {
     this.damage = cfg.damage
     this.dropChance = cfg.dropChance
 
-    // 2. 轨迹：直接拷入移动函数，专属参数已写死在各敌机文件的闭包里
-    this.move = cfg.move
+    // 2. 能力目录 + 策略：config 只声明能力，编排交给对应的 EnemyAI。
+    //    AI 的 reset 复位其内部阶段状态（如 Boss 的 phase=0），保证对象池复用后从入场开始。
+    this.config = cfg
+    this.ai = createEnemyAI(cfg.id)
+    this.ai.reset?.()
 
     // 3. ⚠️ 运行时状态【每次都必须复位】—— 对象池复用会反复调用 init
     this.elapsed = 0
     this.spawnX = this.node.position.x   // ← 必须在 setPosition 之后调用 init！
     this.isPaused = false                // ← 若在暂停中被回收，取出后会一直冻结
+    // 发射器装配状态：交给 setWeapons 在首帧 AI 决策时重建（此处清空，避免复用上一世的残留）
+    this.activeEmitters = []
+    this.weaponKeys = null
+    this.emitterConfigRef = undefined
 
     // 4. 外观与体型：三种敌机【共用 1 个 prefab】，靠运行时换 SpriteFrame + 节点缩放区分。
     //    —— 这就是"角色是数据"：size / 贴图全从 cfg 来，prefab 不再区分机型。
@@ -156,17 +177,8 @@ export class Enemy extends Component {
     // 6. 开火相关：取子弹管理器 + 本敌机子弹 prefab + 发射器实例
     this.bulletManager = BulletManager.getInstance()
     this.bulletPrefab = getEnemy(cfg.id)?.asset?.bulletPrefab ?? null
-    // ⚠️ 配置里的 emitters 是【工厂闭包数组】(每项是 `() => new XxxEmitter(...)`)，
-    //    模块加载时只创建函数、不创建实例；真正的 new 延迟到敌机生成这一刻（箭头函数闭包）。
-    //    同一敌机 prefab 被对象池复用、可能被派给不同 cfg：
-    //      - 配置引用相同（cfg.emitters 是模块级单例，引用稳定）→ 只 reset 复用，省去每次 new；
-    //      - 配置引用不同（池中节点被改派给另一种敌机）→ 重新调用工厂闭包生成实例。
-    if (this.emitterFactories === cfg.emitters) {
-      for (const e of this.emitters) e.reset()
-    } else {
-      this.emitters = cfg.emitters ? cfg.emitters.map((make) => make()) : []
-      this.emitterFactories = cfg.emitters
-    }
+    // ⚠️ 开火装配 + 移动选择交给 AI：首帧 update 时 AI 经 useMove / setWeapons 装配，
+    //    这里不再硬编码任何"阶段/发射器"——编排权完全在 entities/ai/ 的策略里。
   }
 
   /**
@@ -211,24 +223,28 @@ export class Enemy extends Component {
   }
 
   /**
-   * 每帧推进轨迹。
+   * 每帧推进。
    *
    * 职责分工的两层写法：
-   *   1. update 只管【通用部分】—— 暂停判定、推进 elapsed、算出当前位置、出界回收
-   *   2. 轨迹形状全在 cfg.move（每个敌机自己写的函数）里 —— 它直接写 node 位置
+   *   1. update 只管【通用部分】—— 暂停判定、委托 AI 决策、推进移动相位时间、出界回收
+   *   2. "这一帧该用什么移动 / 开什么火"完全交给本敌机的 EnemyAI（entities/ai/）：
+   *      AI 调 enemy.useMove(key) / enemy.setWeapons(keys) 只"设意图"，
+   *      真正的写位置（move）与 tick 子弹（activeEmitters）留在这里执行。
    *
-   * 新增一种轨迹 = 在某个敌机文件里写一个 move 函数，update 与 Enemy 通用骨架一行都不用改。
+   * 新增一种敌机行为 = 写一个新 EnemyAI 实现 + 在配置表里补 moves/emitters 能力，
+   * Enemy 通用骨架一行不用改（与玩家读输入调发射器同构）。
    */
   protected update(deltaTime: number): void {
     // 暂停/非游玩状态（菜单/暂停/结算）时冻结，不向下飞
     if (this.isPaused) return
 
-    // elapsed 是【世界时间】的累积 —— 冻结时上面已 return，天然不推进，
-    // 所以 sin(…) 的相位在暂停期间原地保留，恢复后从原处继续摆。
+    // 1. 委托 AI 决策（只设意图，可能 resetPhaseTime 把移动相位时间归零）
+    this.ai.update(this, { dt: deltaTime, elapsed: this.elapsed })
+
+    // 2. 推进移动相位时间：阶段切换时 AI 已归零，这里从 0 开始累加，供正弦/绕圈从 0 摆相
     this.elapsed += deltaTime
 
-    // —— 调用本敌机自己的移动函数：它直接写 node 位置 ——
-    // 通用骨架（暂停 / 计时 / 出界回收）留在 update，轨迹形状全在 cfg.move 里。
+    // 3. 执行：跑当前移动（写位置）+ 推进当前激活的发射器
     this.move?.(this.node, {
       elapsed: this.elapsed,
       dt: deltaTime,
@@ -237,7 +253,7 @@ export class Enemy extends Component {
       bounds: Enemy.BOUNDS,
     })
 
-    // 开火：推进本敌机的发射器（普通机 emitters 为空 → 不做事）
+    // 开火：推进本敌机当前激活的发射器（普通机 activeEmitters 为空 → 不做事）
     this.tickEmitters(deltaTime)
 
     // —— 超出玩家可视区下界则回收 ——
@@ -249,13 +265,13 @@ export class Enemy extends Component {
   }
 
   /**
-   * 把本敌机的发射器推进一帧（敌机开火的唯一入口）。
+   * 把本敌机当前激活的发射器推进一帧（敌机开火的唯一入口）。
    *
    * 与 Player.tickEmitters 同构：只是子弹 prefab 来自本敌机资源、敌弹朝下、无激光判定。
-   * 普通机 emitters 为空 → 直接返回，不做任何事。
+   * activeEmitters 为空（不开火） → 直接返回，不做任何事。
    */
   private tickEmitters(dt: number): void {
-    if (this.emitters.length === 0 || !this.bulletManager || !this.bulletPrefab) return
+    if (this.activeEmitters.length === 0 || !this.bulletManager || !this.bulletPrefab) return
     const p = this.node.position
     const ctx: FireContext = {
       fireLevel: 1,                 // 敌机无火力升级，恒用第 1 档
@@ -266,12 +282,67 @@ export class Enemy extends Component {
       mods: NO_MODS,
       hitQuery: null,               // 实体弹不需要激光命中查询
     }
-    for (const e of this.emitters) e.tick(dt, ctx)
+    for (const e of this.activeEmitters) e.tick(dt, ctx)
   }
 
   /**
-   * 轨迹形状不再集中在这里 —— 各敌机的移动函数写在 data/enemies/Enemy* 里（cfg.move），
-   * 由 update 每帧调用。要加新轨迹，写个函数即可，本文件不动。
+   * AI 给 Enemy 的公开接口（设意图用）。
+   * 这些方法的存在是为了贯彻"AI 只设意图、Enemy 执行"的边界——
+   * 保持最小化，避免 AI 直接碰 Enemy 的内部状态。
+   */
+  /** AI 调用：选定当前移动能力（按 config.moves 的 key）；key 不存在则本帧不动 */
+  public useMove(key: string): void {
+    this.move = this.config.moves[key] ?? null
+  }
+
+  /**
+   * AI 调用：激活一组命名发射器（按 config.emitters 的 key）。
+   *
+   * 池复用规则（避免"引用相等就 reset"导致每帧清零冷却、永不发射的坑）：
+   *   - 同 cfg + 同 key 组合 → 复用现有实例，【不动冷却】（冷却连续、升级不打断）；
+   *   - cfg 变（池节点被改派不同敌机）或 key 变（AI 切换武器）→ 重建新实例。
+   */
+  public setWeapons(keys: string[]): void {
+    const cfgEmitters = this.config.emitters
+    const cfgChanged = this.emitterConfigRef !== cfgEmitters
+    const keysChanged = !this.weaponKeys
+      || this.weaponKeys.length !== keys.length
+      || keys.some((k, i) => k !== this.weaponKeys![i])
+    if (cfgChanged || keysChanged) {
+      if (cfgEmitters) {
+        this.activeEmitters = keys
+          .map((k) => cfgEmitters[k]?.() ?? null)
+          .filter((e): e is Emitter => e !== null)
+        this.weaponKeys = keys.length ? [...keys] : null
+        this.emitterConfigRef = cfgEmitters
+      } else {
+        this.activeEmitters = []
+        this.weaponKeys = null
+        this.emitterConfigRef = undefined
+      }
+    }
+    // 否则：同样的 cfg + 同样的 key → 什么都不做，复用现有发射器（冷却连续）
+  }
+
+  /** AI 调用：启用配置里【全部】发射器（普通/精英默认行为） */
+  public useAllWeapons(): void {
+    this.setWeapons(this.config.emitters ? Object.keys(this.config.emitters) : [])
+  }
+
+  /** AI 调用：清掉当前开火（如 Boss 入场下降阶段） */
+  public clearWeapons(): void {
+    this.setWeapons([])
+  }
+
+  /** AI 调用：把移动相位时间归零（阶段切换时让正弦/绕圈从 0 重新摆相） */
+  public resetPhaseTime(): void {
+    this.elapsed = 0
+  }
+
+  /**
+   * 执行层只负责"跑当前 move + tick 当前发射器"。移动函数写在 data/enemies/Enemy* 里
+   * （config.moves 能力目录），由 update 每帧经 AI 选用后调用；发射器经 AI 调 setWeapons
+   * 装配。要加新轨迹/新武器，写函数 + 在配置表里补能力即可，Enemy 通用骨架不动。
    */
 
   /**
@@ -294,7 +365,7 @@ export class Enemy extends Component {
   public despawn(): void {
     if (this.released) return
     this.released = true
-    for (const e of this.emitters) e.reset()
+    for (const e of this.activeEmitters) e.reset()
     this.manager?.releaseEnemy(this.node, this.prefab!)
   }
 

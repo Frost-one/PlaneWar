@@ -22,7 +22,7 @@ export const ENEMY_BOSS: EnemyConfig = {
   id: 'enemy_boss',
   name: 'BOSS',
   maxHp: 3000,
-  speed: 60,
+  speed: 200,
   score: 500,
   damage: 60,
   spawnCentered: true,
