@@ -1,9 +1,10 @@
 import { _decorator, Component, Node, Prefab } from 'cc'
 import { eventBus } from '../core/EventBus'
-import { StateChangePayload, GameState } from '../data/GameState'
+import { GameState } from '../data/GameState'
+import type { StateChangePayload } from '../core/GameEvent'
 import { poolManager } from '../core/PoolManager'
 import { Pickup } from '../entities/Pickup'
-import { PickupType } from '../data/pickups/PickupConfig'
+import type { PickupId } from '../data/pickups/PickupConfig'
 import { pickDropType } from '../data/pickups/PickupRegistry'
 import { validateRequiredProps } from '../core/utils/validate'
 
@@ -33,7 +34,7 @@ export class DropManager extends Component {
   @property(Prefab)
   pickupPrefab: Prefab | null = null
 
-  // 各类型道具图标不再走 @property 数组：改由 PickupRegistry.loadPickupAssets 启动时统一加载缓存，Pickup.init 经 getPickup(type).asset 取用。
+  // 各类型道具图标不再走 @property 数组：改由 PickupRegistry.loadPickupAssets 启动时统一加载缓存，Pickup.init 经 getPickup(id).asset 取用。
 
   /** 是否冻结（非 PLAYING 时不生成） */
   private isPaused = true
@@ -81,12 +82,12 @@ export class DropManager extends Component {
     this.spawnAt(node.position.x, node.position.y, pickDropType())
   }
 
-  private spawnAt(x: number, y: number, type: PickupType = PickupType.WEAPON_UP): void {
+  private spawnAt(x: number, y: number, id: PickupId = 'pickup_weapon_up'): void {
     const prefab = this.pickupPrefab
     if (!prefab) return
     const node = poolManager.acquire(prefab, this.node)
     node.setPosition(x, y)
-    node.getComponent(Pickup)?.init(this, type)
+    node.getComponent(Pickup)?.init(this, id)
     this.alivePickups.push(node)
   }
 

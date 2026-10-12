@@ -1,6 +1,7 @@
 import { _decorator, Component, Node, Prefab, instantiate } from 'cc'
 import { eventBus } from '../core/EventBus'
-import { StateChangePayload, GameResult, GameState } from '../data/GameState'
+import { GameState } from '../data/GameState'
+import type { StateChangePayload } from '../core/GameEvent'
 import { gameManager } from './GameManager'
 import { validateRequiredProps } from '../core/utils/validate'
 const { ccclass, property } = _decorator

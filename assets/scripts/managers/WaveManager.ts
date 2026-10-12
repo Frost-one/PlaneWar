@@ -2,7 +2,8 @@
 // 波次 runner（编排者）：只读 Stage 数据，按触发条件喊 EnemyManager 出怪，
 // 播完且场上无敌机则判定通关。本身不造敌机（那归 EnemyManager）。
 import { _decorator, Component } from 'cc'
-import { GameState, GameResult, StateChangePayload } from '../data/GameState'
+import { GameState, GameResult } from '../data/GameState'
+import type { StateChangePayload } from '../core/GameEvent'
 import { eventBus } from '../core/EventBus'
 import { gameManager } from './GameManager'
 import { EnemyManager } from './EnemyManager'

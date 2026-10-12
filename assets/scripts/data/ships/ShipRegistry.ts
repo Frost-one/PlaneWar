@@ -1,7 +1,7 @@
 import { Prefab, SpriteFrame, AudioClip } from 'cc'
 import { eventBus } from '../../core/EventBus'
 import { loadAssetList, loadAssetOrNull } from '../../core/utils/asset'
-import type { ShipAsset, ShipConfig } from './ShipConfig'
+import type { ShipAsset, ShipConfig, ShipId } from './ShipConfig'
 import { SHIP_RED } from './ShipRed'
 import { SHIP_GREEN } from './ShipGreen'
 import { SHIP_BLUE } from './ShipBlue'
@@ -15,12 +15,21 @@ import { SHIP_BLUE } from './ShipBlue'
  * "遍历机型、按各自 assetPaths 加载"必须认识 ShipConfig（依赖方向 data → core）。
  */
 
-/** 静态机型模板：零运行时，仅作加载路径来源与数值源（双存储之一） */
-export const SHIP_REGISTRY: readonly ShipConfig[] = [
-  SHIP_RED,
-  SHIP_GREEN,
-  SHIP_BLUE
-]
+/**
+ * 静态机型模板：零运行时，仅作加载路径来源与数值源（双存储之一）。
+ *
+ * 用 `Record<ShipId, ShipConfig>` 而非裸数组 —— 借助 `satisfies` 强制「穷尽」：
+ * 漏写一个机型 id、或 id 与配置对不上、或多了多余键，编译期直接报错。
+ * 遍历（加载 / 切换）统一走 `Object.values(SHIP_CONFIGS)`。
+ */
+export const SHIP_CONFIGS = {
+  ship_red: SHIP_RED,
+  ship_green: SHIP_GREEN,
+  ship_blue: SHIP_BLUE,
+} satisfies Record<ShipId, ShipConfig>
+
+/** 遍历用数组（顺序即种类顺序），等价于原 SHIP_REGISTRY */
+export const SHIP_REGISTRY: readonly ShipConfig[] = Object.values(SHIP_CONFIGS)
 
 /**
  * 运行时完整大对象 = 静态配置 + 加载资源，调用方只认这一个。
@@ -55,7 +64,7 @@ export function isShipAssetsLoaded(): boolean {
  * 〔id 未知〕返回 null；〔资源未加载完〕仍返回对象、asset 为 null（配置始终可用）。
  * 内部从双存储（静态模板 + 资源缓存）join 而成——对外只看得到这一个大对象。
  */
-export function getShip(id: string): ShipPackage | null {
+export function getShip(id: ShipId): ShipPackage | null {
   const c = SHIP_REGISTRY.find((x) => x.id === id)
   if (!c) return null
   return { config: c, asset: assetCache.get(id) ?? null }
@@ -90,7 +99,7 @@ export async function loadShipAssets(): Promise<void> {
 }
 
 /** 选机界面左右切换：负数取模坑收在这里（JS % 对负数返回负值） */
-export function cycleShip(currentId: string, offset: number): ShipConfig {
+export function cycleShip(currentId: ShipId, offset: number): ShipConfig {
   const total = SHIP_REGISTRY.length
   const current = SHIP_REGISTRY.findIndex((c) => c.id === currentId)
   const base = current < 0 ? 0 : current

@@ -1,7 +1,7 @@
-import { GameResult, GameState, StateChangePayload } from '../data/GameState'
+import { GameResult, GameState } from '../data/GameState'
 import { eventBus } from '../core/EventBus'
 import { playerData } from '../data/PlayerData'
-import { Component } from 'cc'
+import type { EnemyDiePayload, PlayerHitPayload, StateChangePayload } from '../core/GameEvent'
 /**
  * 游戏全局状态管理器（单例）
  * 统一维护游戏流程状态机：MENU / PLAYING / PAUSED / OVER。
@@ -107,7 +107,7 @@ export class GameManager {
     eventBus.on('player_hit', this.onPlayerHit, this)
   }
 
-  private onEnemyDie(data: { enemyNode?: Component, score: number }): void {
+  private onEnemyDie(data: EnemyDiePayload): void {
     console.log('敌机死亡：', data)
     playerData.addScore(data.score)
     // 胜利判定已交由 WaveManager 的"波次清空"逻辑触发，本处只管加分
@@ -118,7 +118,7 @@ export class GameManager {
    * 扣血量由事件载荷 data.damage 携带（= 敌机的 damage，写在敌机配置里），
    * 生命归零则切到 OVER 结算状态。
    */
-  private onPlayerHit(data: { enemyNode?: Component, playerNode?: Component, damage: number }): void {
+  private onPlayerHit(data: PlayerHitPayload): void {
     console.log('玩家被撞：', data)
     playerData.takeDamage(data.damage)
     if (playerData.isDead()) {

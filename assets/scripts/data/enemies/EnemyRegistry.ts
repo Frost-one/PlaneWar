@@ -23,12 +23,16 @@ import { ENEMY_BOSS } from './EnemyBoss'
  *   registry 只缓存「实体使用的外观资源」，不越权管节点生成。
  */
 
-/** 全部敌机配置（枚举顺序即种类顺序） */
-export const ENEMY_REGISTRY: readonly EnemyConfig[] = [
-  ENEMY_NORMAL,
-  ENEMY_ELITE,
-  ENEMY_BOSS
-]
+/** 静态敌机模板：零运行时（双存储之一）。
+ *  用 `Record<EnemyId, EnemyConfig>` + `satisfies` 强制穷尽：漏写 / 错配 / 多键编译期报错。 */
+export const ENEMY_CONFIGS = {
+  enemy_normal: ENEMY_NORMAL,
+  enemy_elite: ENEMY_ELITE,
+  enemy_boss: ENEMY_BOSS,
+} satisfies Record<EnemyId, EnemyConfig>
+
+/** 遍历用数组（顺序即种类顺序），等价于原 ENEMY_REGISTRY */
+export const ENEMY_REGISTRY: readonly EnemyConfig[] = Object.values(ENEMY_CONFIGS)
 
 /** 一架敌机的运行时资源（由启动阶段加载产生，之后全局同步取用） */
 export interface EnemyAsset {

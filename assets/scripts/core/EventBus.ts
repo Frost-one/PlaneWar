@@ -1,6 +1,8 @@
+import type { GameEventMap } from './GameEvent'
+
 /**
  * 事件回调类型
- * 采用 unknown[] + void 的宽松签名，便于在不同事件间复用
+ * 采用 unknown[] + void 的宽松签名，便于在不同事件间复用（对外仍是强类型的 on/emit）
  */
 type EventCallback = (...args: unknown[]) => void
 
@@ -63,18 +65,23 @@ export class EventBus {
    *                多实例组件（同一原型方法多份实例）务必传入 context，
    *                否则无法区分各实例，只有首个实例能订阅上。
    */
-  public on(event: string, callback: EventCallback, context?: object): void {
-    const list = this.eventMap.get(event) ?? []
+  public on<Event extends keyof GameEventMap>(
+    event: Event,
+    callback: (payload: GameEventMap[Event]) => void,
+    context?: object,
+  ): void {
+    const list = this.eventMap.get(event as string) ?? []
     const ctx = context ?? null
+    const cb = callback as EventCallback
 
     // 仅当「回调 + 上下文」都相同时，才视为重复订阅而跳过
     const duplicated = list.some(
-      (l) => l.callback === callback && l.context === ctx,
+      (l) => l.callback === cb && l.context === ctx,
     )
     if (duplicated) return
 
-    list.push({ callback, context: ctx })
-    this.eventMap.set(event, list)
+    list.push({ callback: cb, context: ctx })
+    this.eventMap.set(event as string, list)
   }
 
   /**
@@ -85,14 +92,18 @@ export class EventBus {
    * @param callback 事件触发时的回调函数
    * @param context 回调的 this 上下文（可选）
    */
-  public once(event: string, callback: EventCallback, context?: object): void {
+  public once<Event extends keyof GameEventMap>(
+    event: Event,
+    callback: (payload: GameEventMap[Event]) => void,
+    context?: object,
+  ): void {
     const wrapper: EventCallback = (...args: unknown[]) => {
       // 先用回调本身或上下文绑定 this 后执行
-      ;(callback as (...a: unknown[]) => void).apply(context ?? undefined, args)
+      ;(callback as (payload: GameEventMap[Event]) => void).apply(context ?? undefined, args)
       // 执行完毕后移除包装函数自身，实现"仅触发一次"
-      this.off(event, wrapper, context)
+      this.off(event, callback, context)
     }
-    this.on(event, wrapper, context)
+    this.on(event, callback, context)
   }
 
   /**
@@ -104,30 +115,35 @@ export class EventBus {
    *                 传入时仅移除该回调（若传入 context 则进一步限定只移除相匹配的那条）。
    * @param context 若传了 context，则仅移除"回调与上下文都匹配"的那条监听。
    */
-  public off(event: string, callback?: EventCallback, context?: object): void {
-    const list = this.eventMap.get(event)
+  public off<Event extends keyof GameEventMap>(
+    event: Event,
+    callback?: (payload: GameEventMap[Event]) => void,
+    context?: object,
+  ): void {
+    const list = this.eventMap.get(event as string)
     if (!list || list.length === 0) {
       return
     }
 
     // 未传回调：移除该事件的所有监听
     if (!callback) {
-      this.eventMap.delete(event)
+      this.eventMap.delete(event as string)
       return
     }
 
+    const cb = callback as EventCallback
     // 从后往前遍历，避免删除元素导致索引错位。
     // 未传 context：移除该回调的所有绑定；传了 context：只移除「回调 + 上下文」完全匹配的那些。
     for (let i = list.length - 1; i >= 0; i--) {
       const l = list[i]
-      if (l.callback !== callback) continue
+      if (l.callback !== cb) continue
       if (context !== undefined && l.context !== (context ?? null)) continue
       list.splice(i, 1)
     }
 
     // 该事件已无任何监听时，清理空的映射项
     if (list.length === 0) {
-      this.eventMap.delete(event)
+      this.eventMap.delete(event as string)
     }
   }
 
@@ -137,10 +153,13 @@ export class EventBus {
    * 并对单个回调做 try/catch，避免某一个回调抛错阻断后续回调执行。
    *
    * @param event 事件名称
-   * @param args 透传给各回调的参数
+   * @param args 透传给各回调的参数（载荷类型由 GameEventMap 约束）
    */
-  public emit(event: string, ...args: unknown[]): void {
-    const list = this.eventMap.get(event)
+  public emit<E extends keyof GameEventMap>(
+    event: E,
+    ...args: GameEventMap[E] extends undefined ? [] : [GameEventMap[E]]
+  ): void {
+    const list = this.eventMap.get(event as string)
     if (!list || list.length === 0) {
       return
     }
@@ -151,13 +170,13 @@ export class EventBus {
       try {
         // 用订阅时记录的 context 绑定 this 调用，避免丢失上下文导致回调里 this 为 undefined
         if (context) {
-          ;(callback as (...a: unknown[]) => void).call(context, ...args)
+          ;(callback as (...a: unknown[]) => void).call(context, ...(args as unknown[]))
         } else {
-          callback(...args)
+          callback(...(args as unknown[]))
         }
       } catch (e) {
         // 单个回调出错不阻断其余回调
-        console.error(`[EventBus] 事件 "${event}" 的回调执行出错：`, e)
+        console.error(`[EventBus] 事件 "${String(event)}" 的回调执行出错：`, e)
       }
     }
   }
@@ -175,8 +194,8 @@ export class EventBus {
    * @param event 事件名称
    * @returns 该事件存在至少一个监听者时返回 true
    */
-  public has(event: string): boolean {
-    const list = this.eventMap.get(event)
+  public has<E extends keyof GameEventMap>(event: E): boolean {
+    const list = this.eventMap.get(event as string)
     return list !== undefined && list.length > 0
   }
 
@@ -185,8 +204,8 @@ export class EventBus {
    * @param event 事件名称
    * @returns 该事件当前注册的回调数量
    */
-  public listenerCount(event: string): number {
-    const list = this.eventMap.get(event)
+  public listenerCount<E extends keyof GameEventMap>(event: E): number {
+    const list = this.eventMap.get(event as string)
     return list ? list.length : 0
   }
 

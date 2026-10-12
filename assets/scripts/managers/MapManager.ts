@@ -8,7 +8,8 @@ import {
 } from 'cc'
 import { GameConfig } from '../data/config/GameConfig'
 import { eventBus } from '../core/EventBus'
-import { StateChangePayload, GameState } from '../data/GameState'
+import { GameState } from '../data/GameState'
+import type { StateChangePayload } from '../core/GameEvent'
 import { WFCGenerator, type WFCTile } from '../core/WFCGenerator'
 import { validateRequiredProps } from '../core/utils/validate'
 const { ccclass, property } = _decorator

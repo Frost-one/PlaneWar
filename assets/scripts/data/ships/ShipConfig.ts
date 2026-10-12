@@ -3,6 +3,15 @@ import type { Emitter } from '../../entities/emitters/Emitter'
 import type { SpriteFrame, Prefab, AudioClip } from 'cc'
 
 /**
+ * 机型 id 字面量联合（编译期唯一的机型标识）。
+ *
+ * 三种机型各自是一个可声明、不可拼错的唯一值；写错（如 'ship_rad'）tsc 直接拦截，
+ * 不必等到运行时 getShip 返回 null 才暴露。它仍是 string 的子集，所以传给
+ * getShip(id: ShipId) / Map 等一律合法，且与项目"字符串 id"约定完全兼容。
+ */
+export type ShipId = 'ship_red' | 'ship_green' | 'ship_blue'
+
+/**
  * 资源路径 —— 写在飞船文件里的【静态字符串】，不涉及任何异步。
  *
  * 【为什么用可选字段，而不是全部必填】
@@ -69,7 +78,8 @@ export interface ShipAsset {
  *    弹道的实现住在 entities/emitters/ 下，由各机型文件引用组装。
  */
 export interface ShipConfig {
-  readonly id: string
+  /** 唯一标识：选机界面 / 存档 / 波次表用它查表；类型收窄为 ShipId 字面量联合 */
+  readonly id: ShipId
   readonly name: string
   /** 基础血量：开局写入 PlayerData.maxHp / hp */
   readonly maxHp: number
@@ -100,7 +110,7 @@ export interface ShipConfig {
    *   加能力只改配置清单、不动 Player/Enemy 的 tick 循环、也不动 LaneEmitter/BeamEmitter
    *   基类 —— 符合开闭原则（对扩展开放、对修改封闭）。
    *
-   * ⚠️ **与 EnemyConfig.emitters 同形**：都是【工厂闭包数组】
+   * ⚠️ **与 EnemyConfig.emitters 同形**（敌机在 `emitters` 能力目录里也是工厂闭包数组）：都是【工厂闭包数组】
    *   （每项是 `() => new XxxEmitter(...)`）。
    *   实体（Player / Enemy）在装配时调用闭包生成真正的发射器实例 ——
    *   写法统一，再无 `createEmitters` 这种特殊写法，多架同型实体也不会共享冷却。
@@ -110,7 +120,7 @@ export interface ShipConfig {
    *   闭包把 `new` 延迟到实体生成的那一刻才执行；配置模块加载时只创建函数、
    *   不创建发射器实例。这样既消灭了"只为被 clone 而存在的死模板实例"，
    *   又不必引入 `EmitterSpec` 之类的中心分发文件——"哪种发射器"直接写死在
-   *   闭包里的 `new` 上，实体侧只需 `cfg.emitters.map((make) => make())` 一句。
+   *   闭包里的 `new` 上，实体侧只需 `emitters.map((make) => make())` 一句（玩家在装备时、敌机经 AI 调 setWeapons 装配时）。
    *
    * 【注意：这里是"一套"发射器，不是"每档一套"】
    *   火力等级是运行时读的一个数（FireContext.fireLevel），不是用来换对象的。

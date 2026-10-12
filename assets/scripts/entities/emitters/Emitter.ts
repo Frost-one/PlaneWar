@@ -49,7 +49,8 @@ export interface HitRect {
  *   只需要"能挨打"，那就只声明"能挨打"。
  */
 export interface Damageable {
-  takeDamage(d: number): void
+  /** hitPoint：可选的命中点（世界坐标）。子弹由 Enemy 碰撞回调给、激光由 BeamEmitter 给；不传则由受击方自行取默认位置 */
+  takeDamage(d: number, hitPoint?: { x: number; y: number }): void
 }
 
 /**

@@ -19,19 +19,3 @@ export enum GameResult {
   WIN = 'WIN',
   LOSE = 'LOSE',
 }
-
-/**
- * state_change 事件的载荷：状态迁移三元组 + 结算结果。
- * - oldState：迁移前的状态
- * - newState：迁移后的状态
- * - result：结算结果（仅 newState === GameState.OVER 时有意义，其余为 NONE）
- *
- * 订阅方按需解构，例如：
- * - 只关心"现在是什么状态"：`({ newState }: StateChangePayload) => ...`
- * - 需要区分"从哪来"：`({ oldState, newState }: StateChangePayload) => ...`
- */
-export interface StateChangePayload {
-  oldState: GameState
-  newState: GameState
-  result: GameResult
-}

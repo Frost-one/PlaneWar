@@ -1,7 +1,8 @@
 import { _decorator, BoxCollider2D, CircleCollider2D, Color, Component, EventKeyboard, Graphics, Input, input, KeyCode, Node, Sprite } from 'cc'
 import { GameConfig } from '../data/config/GameConfig'
 import { eventBus } from '../core/EventBus'
-import { StateChangePayload, GameState } from '../data/GameState'
+import { GameState } from '../data/GameState'
+import type { StateChangePayload } from '../core/GameEvent'
 import { BulletManager } from '../managers/BulletManager'
 import { EnemyManager } from '../managers/EnemyManager'
 import { IPlayerData, playerData } from '../data/PlayerData'
@@ -9,7 +10,8 @@ import { getShip, SHIP_REGISTRY } from '../data/ships/ShipRegistry'
 import type { ShipPackage } from '../data/ships/ShipRegistry'
 import type { Emitter, FireContext, HitQuery } from './emitters/Emitter'
 import { NO_MODS } from './emitters/Emitter'
-import { PickupType, PickupPayload } from '../data/pickups/PickupConfig'
+import { PickupType } from '../data/pickups/PickupConfig'
+import type { PickupPayload } from '../core/GameEvent'
 const { ccclass } = _decorator
 
 /**

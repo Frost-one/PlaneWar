@@ -1,7 +1,5 @@
 import { _decorator, Button, Component } from 'cc'
-import { eventBus } from '../core/EventBus'
 import { gameManager } from '../managers/GameManager'
-import { StateChangePayload, GameState } from '../data/GameState'
 import { validateRequiredProps } from '../core/utils/validate'
 const { ccclass, property } = _decorator
 

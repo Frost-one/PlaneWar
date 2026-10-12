@@ -1,10 +1,10 @@
 import { eventBus } from '../core/EventBus'
 import { getShip, SHIP_REGISTRY } from './ships/ShipRegistry'
-import type { ShipConfig } from './ships/ShipConfig'
+import type { ShipConfig, ShipId } from './ships/ShipConfig'
 
 /** 玩家数据字段的形状：用于整份快照、partial 批量设置与存档 */
 export interface IPlayerData {
-  shipId: string
+  shipId: ShipId
   /** 武器等级（火力等级）：局内成长，吃 P 道具提升；死亡 / 新局清零。上限 = 当前武器的 levels.length */
   weaponLevel: number
   hp: number
@@ -15,7 +15,7 @@ export interface IPlayerData {
 }
 
 export class PlayerData {
-  private shipId: string = SHIP_REGISTRY[0].id
+  private shipId: ShipId = SHIP_REGISTRY[0].id
   /**
    * 武器等级（即火力等级）：局内成长（吃 P 道具提升），死亡 / 新局清零。
    * 名字里特意带 weapon，因为它的唯一用途就是当"当前火力档位"传给发射器：

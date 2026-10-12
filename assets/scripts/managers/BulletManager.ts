@@ -1,7 +1,8 @@
 import { _decorator, Component, Node } from 'cc'
 import type { Prefab } from 'cc'
 import { eventBus } from '../core/EventBus'
-import { StateChangePayload, GameState } from '../data/GameState'
+import { GameState } from '../data/GameState'
+import type { StateChangePayload } from '../core/GameEvent'
 import { Bullet, BulletSpawnParams } from '../entities/Bullet'
 import { poolManager } from '../core/PoolManager'
 const { ccclass, property } = _decorator

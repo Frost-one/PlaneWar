@@ -2,16 +2,21 @@ import { SpriteFrame } from 'cc'
 import { eventBus } from '../../core/EventBus'
 import { loadAssetOrNull } from '../../core/utils/asset'
 import { PickupType } from './PickupConfig'
-import type { PickupConfig } from './PickupConfig'
+import type { PickupConfig, PickupId } from './PickupConfig'
 
 /**
  * 道具登记表 + 资源服务（镜像 ships 的 ShipRegistry / enemies 的 EnemyRegistry）。
  *
  * 【双存储 + 对外单入口】
- *   静态模板 PICKUP_REGISTRY（双存储之一）+ 资源缓存 spriteCache（双存储之二），
- *   对外只暴露一个 getPickup(type) 取出 {config, asset} 大对象。
+ *   静态模板 PICKUP_CONFIGS（双存储之一）+ 资源缓存 spriteCache（双存储之二），
+ *   对外只暴露一个 getPickup(id) 取出 {config, asset} 大对象。
  *   图标 SpriteFrame 由 loadPickupAssets 在启动期按 config.spritePath resources.load 并缓存——
  *   不再依赖 DropManager 的 @property 数组（消除"按序拖数组易错位"隐患，与 ship/enemy 一致）。
+ *
+ * 【id 与 type 是两件事】
+ *   config.id 是「哪一件道具」的唯一标识（字符串字面量联合，= 注册键）；
+ *   config.type 是「什么类别的 buff」（数字枚举，给 Player.onPickup 做 switch 收窄）。
+ *   registry 以 id 为键：漏写一个 id / 多了多余键，编译期直接报错。
  */
 
 /**
@@ -19,6 +24,7 @@ import type { PickupConfig } from './PickupConfig'
  * 视觉：橙环图标（assets/resources/pickups/pickup_weapon_up）。
  */
 const PICKUP_WEAPON_UP: PickupConfig = {
+  id: 'pickup_weapon_up',
   type: PickupType.WEAPON_UP,
   levels: 1,
   trackPlayer: true,
@@ -30,10 +36,11 @@ const PICKUP_WEAPON_UP: PickupConfig = {
  * 视觉：红环图标（assets/resources/pickups/pickup_rampage），自旋（spin）演示"道具自身旋转、不影响垂直下落"。
  *
  * ⚠️ 该 buff 目前【暂未实现】，仅配置与数据通路就位；掉落也暂不会产出
- * （PickupRegistry.pickDropType 仍只返 WEAPON_UP）。将来在 Player.onPickup 加一个
+ * （pickDropType 仍只返 pickup_weapon_up）。将来在 Player.onPickup 加一个
  * WEAPON_RAMPAGE 分支（拉满火力）即可生效。
  */
 const PICKUP_RAMPAGE: PickupConfig = {
+  id: 'pickup_rampage',
   type: PickupType.WEAPON_RAMPAGE,
   trackPlayer: true,
   spin: 0,
@@ -47,6 +54,7 @@ const PICKUP_RAMPAGE: PickupConfig = {
  * 配置与数据通路已就位，将来在 PlayerData 加 heal() 并在 Player.onPickup 加 HEAL 分支即可。
  */
 const PICKUP_HEAL: PickupConfig = {
+  id: 'pickup_heal',
   type: PickupType.HEAL,
   heal: 30,
   trackPlayer: true,
@@ -60,19 +68,28 @@ const PICKUP_HEAL: PickupConfig = {
  * 配置与数据通路已就位，将来在 PlayerData 加 shield 字段 / addShield() 并在 Player.onPickup 加 SHIELD 分支即可。
  */
 const PICKUP_SHIELD: PickupConfig = {
+  id: 'pickup_shield',
   type: PickupType.SHIELD,
   shield: 50,
   trackPlayer: true,
   spritePath: 'pickups/pickup_shield/spriteFrame',
 }
 
-/** 全部道具配置（枚举顺序即类型顺序） */
-export const PICKUP_REGISTRY: readonly PickupConfig[] = [
-  PICKUP_WEAPON_UP,
-  PICKUP_RAMPAGE,
-  PICKUP_HEAL,
-  PICKUP_SHIELD,
-]
+/**
+ * 静态道具模板：零运行时（双存储之一）。
+ * 用 `Record<PickupId, PickupConfig>` + `satisfies` 强制「穷尽」：
+ * 漏写一个 id、或多了多余键，编译期直接报错。
+ * 遍历（加载 / 掉落）统一走 `Object.values(PICKUP_CONFIGS)`。
+ */
+export const PICKUP_CONFIGS = {
+  pickup_weapon_up: PICKUP_WEAPON_UP,
+  pickup_rampage: PICKUP_RAMPAGE,
+  pickup_heal: PICKUP_HEAL,
+  pickup_shield: PICKUP_SHIELD,
+} satisfies Record<PickupId, PickupConfig>
+
+/** 遍历用数组（顺序即种类顺序），等价于原 PICKUP_REGISTRY */
+export const PICKUP_REGISTRY: readonly PickupConfig[] = Object.values(PICKUP_CONFIGS)
 
 /** 运行期资源：图标 SpriteFrame（双存储之二） */
 export interface PickupAsset {
@@ -82,6 +99,7 @@ export interface PickupAsset {
 /**
  * 运行期大对象 = 静态配置 + 加载资源，调用方只认这一个（与 ship / enemy 同构）。
  * ⚠️ asset 可空：配置在启动期即可用，资源是异步加载的、可能尚未就绪（asset = null）。
+ *    〔id 未知〕才返回 null；〔资源没加载完〕时仍返回包装对象、只是 asset 为 null。
  */
 export interface PickupPackage {
   readonly config: PickupConfig
@@ -89,8 +107,8 @@ export interface PickupPackage {
   readonly asset: PickupAsset | null
 }
 
-/** 按 type 缓存的图标（双存储之二） */
-const spriteCache = new Map<PickupType, PickupAsset>()
+/** 按 id 缓存的图标（双存储之二） */
+const spriteCache = new Map<string, PickupAsset>()
 
 /** 加载是否已跑完一轮（无论成功几个）。区分"还没好"与"真的没有" */
 let loaded = false
@@ -99,14 +117,14 @@ export function isPickupAssetsLoaded(): boolean {
 }
 
 /**
- * 统一入口：按 type 取"配置 + 资源"大对象。
- * 〔type 未知〕返回 null；〔资源未加载完〕仍返回对象、asset 为 null（配置始终可用）。
+ * 统一入口：按 id 取"配置 + 资源"大对象。
+ * 〔id 未知〕返回 null；〔资源未加载完〕仍返回对象、asset 为 null（配置始终可用）。
  * 内部从双存储 join 而成——对外只看得到这一个大对象。
  */
-export function getPickup(type: PickupType): PickupPackage | null {
-  const c = PICKUP_REGISTRY.find((x) => x.type === type)
+export function getPickup(id: PickupId): PickupPackage | null {
+  const c = PICKUP_REGISTRY.find((x) => x.id === id)
   if (!c) return null
-  return { config: c, asset: spriteCache.get(type) ?? null }
+  return { config: c, asset: spriteCache.get(id) ?? null }
 }
 
 /**
@@ -117,8 +135,8 @@ export async function loadPickupAssets(): Promise<void> {
   await Promise.all(
     PICKUP_REGISTRY.map(async (cfg) => {
       const sprite = await loadAssetOrNull(cfg.spritePath, SpriteFrame)
-      if (!sprite) console.error(`[pickups] ${PickupType[cfg.type]} 图标加载失败：${cfg.spritePath}`)
-      spriteCache.set(cfg.type, { sprite })
+      if (!sprite) console.error(`[pickups] ${cfg.id} 图标加载失败：${cfg.spritePath}`)
+      spriteCache.set(cfg.id, { sprite })
     }),
   )
   console.log(`[pickups] 资源加载完成：图标 ${spriteCache.size}/${PICKUP_REGISTRY.length}`)
@@ -127,9 +145,9 @@ export async function loadPickupAssets(): Promise<void> {
 }
 
 /**
- * 掉落时选道具类型。
- * 目前只掉已实现的 WEAPON_UP；将来接「每敌机掉落表」后，改为按权重抽（例如精英机概率掉回血）。
+ * 掉落时选道具（返回 PickupId = 哪一件道具；其 type 决定是什么 buff）。
+ * 目前只掉已实现的 pickup_weapon_up；将来接「每敌机掉落表」后，改为按权重抽（例如精英机概率掉回血）。
  */
-export function pickDropType(): PickupType {
-  return PickupType.WEAPON_UP
+export function pickDropType(): PickupId {
+  return 'pickup_weapon_up'
 }

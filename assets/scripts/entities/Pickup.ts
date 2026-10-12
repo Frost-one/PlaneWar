@@ -1,10 +1,13 @@
 import { _decorator, Component, Node, Sprite, Color } from 'cc'
 import { GameConfig } from '../data/config/GameConfig'
 import { eventBus } from '../core/EventBus'
-import { StateChangePayload, GameState } from '../data/GameState'
+import { GameState } from '../data/GameState'
+import type { StateChangePayload } from '../core/GameEvent'
 import { Player } from './Player'
 import type { DropManager } from '../managers/DropManager'
-import { PickupType, PickupPayload } from '../data/pickups/PickupConfig'
+import { PickupType } from '../data/pickups/PickupConfig'
+import type { PickupPayload } from '../core/GameEvent'
+import type { PickupId } from '../data/pickups/PickupConfig'
 import { getPickup } from '../data/pickups/PickupRegistry'
 
 const { ccclass } = _decorator
@@ -62,6 +65,7 @@ export class Pickup extends Component {
   private pulseT = 0
 
   // —— 由类型决定的状态（init 时从 PickupRegistry 拷入）——
+  private id: PickupId = 'pickup_weapon_up'
   private type: PickupType = PickupType.WEAPON_UP
   private levels: number | undefined = undefined
   private heal: number | undefined = undefined
@@ -72,20 +76,21 @@ export class Pickup extends Component {
   /** 视觉组件（可选；prefab 没带则跳过着色） */
   private sprite: Sprite | null = null
 
-  /** 由 DropManager 在生成（借出对象池）时调用；图标由 getPickup(type).asset 取，占位 tint/label 已移除，无图标时仅显示空 Sprite */
-  public init(manager: DropManager, type: PickupType): void {
+  /** 由 DropManager 在生成（借出对象池）时调用；图标由 getPickup(id).asset 取，占位 tint/label 已移除，无图标时仅显示空 Sprite */
+  public init(manager: DropManager, id: PickupId): void {
     this.manager = manager
     this.released = false
     this.isPaused = false
     this.unscheduleAllCallbacks()
 
-    const pkg = getPickup(type)
+    const pkg = getPickup(id)
     if (!pkg) {
-      console.warn(`[Pickup] 未知道具类型：${type}`)
+      console.warn(`[Pickup] 未知道具 id：${id}`)
       return
     }
     const cfg = pkg.config
     const spriteFrame = pkg.asset?.sprite ?? null
+    this.id = cfg.id
     this.type = cfg.type
     this.levels = cfg.levels
     this.heal = cfg.heal
@@ -188,7 +193,7 @@ export class Pickup extends Component {
 
   /** 拾取：按类型打包字面量载荷 → 广播 → 回收 */
   private collect(): void {
-    const payload: PickupPayload = { type: this.type }
+    const payload: PickupPayload = { id: this.id, type: this.type }
     if (this.levels !== undefined) payload.levels = this.levels
     if (this.heal !== undefined) payload.heal = this.heal
     if (this.shield !== undefined) payload.shield = this.shield

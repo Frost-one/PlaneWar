@@ -182,7 +182,12 @@ export class BeamEmitter implements Emitter {
     this.tickTimer -= interval
 
     // 不贯穿：一个 tick 只结算挡在最前面的那一台（"最前面"由查询侧判定）
-    hit?.target.takeDamage(Math.round(level.damagePerTick * ctx.mods.damageMultiplier))
+    // 命中火花落点由本发射器决定：接触点 = 光束中轴(x=ctx.x) × 目标近边(y=hit.y)，
+    // 而非敌机中心 —— 与子弹走 Enemy 碰撞点同理（谁触发谁给落点）。
+    hit?.target.takeDamage(
+      Math.round(level.damagePerTick * ctx.mods.damageMultiplier),
+      { x: ctx.x, y: hit.y },
+    )
   }
 
   /** 清计时 + 清流动相位 + 销毁光束节点 */

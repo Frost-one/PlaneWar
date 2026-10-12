@@ -18,7 +18,17 @@ export enum PickupType {
 }
 
 /**
- * 单个拾取类型的配置（数据驱动：类型 → 效果数值 + 外观 + 行为）。
+ * 道具 id 字面量联合（= 哪一件道具，唯一标识 / 注册键）。
+ *
+ * 与 ship/enemy 的 ShipId / EnemyId 同款：用字符串字面量联合而非枚举，运行时仍是裸字符串、
+ * 写错（如 'pickup_wp'）tsc 直接拦截。掉落系统按 id 决定"掉哪一件"，与 ship 的 id 同理。
+ * 注意：这层 id 是「身份」，与下面的 `type`（道具类别 / 效果种类）是**两件事**——
+ * 一件道具的 id 唯一，但它的 type 决定它是什么 buff（见各文件注释）。
+ */
+export type PickupId = 'pickup_weapon_up' | 'pickup_rampage' | 'pickup_heal' | 'pickup_shield'
+
+/**
+ * 单个拾取类型的配置（数据驱动：id → 效果数值 + 外观 + 行为）。
  *
  * 所有具体配置合并写在 PickupRegistry.ts 中，本文件只保留类型与接口定义（零运行时代码），
  * 避免循环依赖并减小模块数量。实体（Pickup）与掉落（DropManager）都不硬编码任何类型细节。
@@ -29,38 +39,29 @@ export enum PickupType {
  *   Player.onPickup 按 type 取对应字段，零类型断言。将来加新类型只需加一个可选字段（加法扩展）。
  */
 export interface PickupConfig {
-  /** 自身类型（与 ship/enemy 的 id 同理，留作反查 / 判别） */
-  type: PickupType
+  /** 唯一标识：掉落 / 波次 / 存档按此引用（对应 ship/enemy 的 id） */
+  readonly id: PickupId
+  /** 道具类别（效果种类）：用枚举做判别标签最干净，Player.onPickup 按 switch(type) 收窄 */
+  readonly type: PickupType
   /** WEAPON_UP 用：升几档火力（受发射器档位数上限约束） */
-  levels?: number
+  readonly levels?: number
   /** HEAL 用：治疗量（字面量） */
-  heal?: number
+  readonly heal?: number
   /** SHIELD 用：护盾值（字面量） */
-  shield?: number
+  readonly shield?: number
   /** 是否吸附玩家：增益道具=true（必被吃到）；负面道具将来置 false（可躲） */
-  trackPlayer: boolean
+  readonly trackPlayer: boolean
   /**
    * 自身自旋角速度（度/秒）；省略或 0 = 不旋转。
    * 仅视觉：旋转不影响垂直下落，也不影响吸附轨迹（吸附照样朝玩家走）。
    * 想让某道具"边转边落"就给个正值，例如 WEAPON_RAMPAGE 的演示。
    */
-  spin?: number
+  readonly spin?: number
   /**
    * 图标 SpriteFrame 的 resources 路径（相对 assets/resources/，不带扩展名，取图须带 /spriteFrame 后缀）。
    * 启动期由 PickupRegistry.loadPickupAssets 按此路径 resources.load 并缓存到 spriteCache；
-   * 运行时 Pickup 实体经 getPickup(type).asset.sprite 取用。缺图标可留空串回退到 tint+label。
+   * 运行时 Pickup 实体经 getPickup(id).asset.sprite 取用。缺图标可留空串回退到 tint+label。
    * 例如 'pickups/pickup_weapon_up/spriteFrame'。
    */
-  spritePath: string
-}
-
-/**
- * 拾取事件载荷：必有 type，其余按类型带对应字面量（加法扩展，不破坏旧签名）。
- * Player.onPickup 按 data.type 取 levels / heal / shield。
- */
-export interface PickupPayload {
-  type: PickupType
-  levels?: number
-  heal?: number
-  shield?: number
+  readonly spritePath: string
 }

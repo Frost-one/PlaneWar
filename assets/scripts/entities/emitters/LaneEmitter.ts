@@ -68,9 +68,6 @@ export class LaneEmitter implements Emitter {
   /** 距离下一次开火还剩多少秒；**跨档位共享**，所以换档不会重置它 */
   private cooldown = 0
 
-  /** "没有子弹 prefab"只警告一次的标志位（避免每帧刷屏） */
-  private warnedNoPrefab = false
-
   constructor(id: string, levels: readonly LaneLevel[], minLevel = 1) {
     this.id = id
     this.levels = levels
@@ -87,16 +84,9 @@ export class LaneEmitter implements Emitter {
     const bulletManager: BulletManager = ctx.bulletManager
 
     // 实体弹机型必须带 prefab；激光机型走的是 BeamEmitter，根本不会进这里。
-    // 只警告一次：这里是每帧调用，每帧打日志会把控制台刷爆。
-    if (!ctx.bulletPrefab) {
-      if (!this.warnedNoPrefab) {
-        this.warnedNoPrefab = true
-        console.warn(
-          `[LaneEmitter] ${this.id} 没有子弹 prefab，无法开火（检查该机型 assetPaths.bullet 是否配置且已放进 resources）`,
-        )
-      }
-      return
-    }
+    // 启动期资源未就绪时 bulletPrefab 会短暂为 null（ship_assets_ready 之后自然取到），
+    // 这里只跳过本帧开火、不打印——缺失的硬错误由 ShipRegistry 加载阶段统一报错。
+    if (!ctx.bulletPrefab) return
 
     const level = this.levelOf(ctx.fireLevel)
     if (!level) return

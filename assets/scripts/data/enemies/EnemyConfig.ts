@@ -16,6 +16,10 @@
  * 【分层】本文件只声明类型（契约层），不含任何数值常量；
  *   数值写在同目录的 EnemyNormal / EnemyElite / EnemyBoss 里，加载与查询收在 EnemyRegistry。
  *   （镜像 ships：ShipConfig 是契约，ShipRed/Green/Blue 是数据，ShipRegistry 是加载+查询）
+ *
+ * 【能力目录 vs 策略】
+ *   本契约是"能力目录"——只声明敌机【拥有】哪些移动形态(moves)与开火能力(emitters)，
+ *   不编排"何时用什么"。编排权交给 EnemyAI（entities/ai/），与玩家读输入调发射器同构。
  */
 
 import type { Node } from 'cc'
@@ -26,7 +30,7 @@ import type { Emitter } from '../../entities/emitters/Emitter'
  * 只给移动函数它需要的量；移动函数【只读】这些量、直接写 node 位置。
  */
 export interface EnemyMoveState {
-  /** 入场后累积的时间（秒），悬停 / 正弦的相位据此算 */
+  /** 移动相位时间（秒）：阶段切换由 AI 调 resetPhaseTime 归零，供正弦/绕圈从 0 摆相 */
   readonly elapsed: number
   /** 本帧时间步长（秒） */
   readonly dt: number
@@ -81,9 +85,9 @@ export interface EnemyAssetPath {
  * 不必等到运行时 getEnemy 返回 null 才暴露。它仍是 string 的子集，所以传给
  * getEnemy(id: string) / Map<string> 等一律合法，且与项目"字符串 id"约定完全兼容。
  */
-export type EnemyId = 'e_normal' | 'e_elite' | 'e_boss'
+export type EnemyId = 'enemy_normal' | 'enemy_elite' | 'enemy_boss'
 
-/** 单种敌机的配置（只读模板） */
+/** 单种敌机的配置（只读模板）—— 只声明"拥有什么能力"，编排看 EnemyAI */
 export interface EnemyConfig {
   /** 唯一标识：波次表 / EnemyManager 用它查表；类型收窄为 EnemyId 字面量联合 */
   readonly id: EnemyId
@@ -106,40 +110,27 @@ export interface EnemyConfig {
    *    这里也用 `damage`；敌机"承受伤害"走 `takeDamage(hp)` 方法，二者不混淆。
    */
   readonly damage: number
-  /** 移动轨迹函数：每个敌机自己定义（见 EnemyMover） */
-  readonly move: EnemyMover
-
+  /**
+   * 移动能力目录：命名轨迹，AI 按 key 选用（见 Enemy.useMove）。
+   * 不同敌机的轨迹差异大，直接写成函数闭包、专属参数写死在函数里。
+   */
+  readonly moves: Record<string, EnemyMover>
+  /**
+   * 开火能力目录（可选）：命名发射器工厂，AI 按 key 启用（见 Enemy.setWeapons）。
+   * 与 ShipConfig.emitters 同形——都是【箭头函数闭包】 `() => new XxxEmitter(...)`，
+   * 模块加载时只创建函数、不创建实例；真正的 new 延迟到敌机生成那一刻（实体侧调用）。
+   * 省略 = 该敌机不开火（如普通机）。
+   */
+  readonly emitters?: Record<string, () => Emitter>
   /**
    * 出生是否【居中对齐】。省略 = false（随机 x）。
    * 用于"悬停 / 不穿屏"的敌机（如 BOSS）：随机 x 会让它永久歪在屏幕一侧。
-   * 原实现用 `movePattern === Hover` 推断，现改为显式标志，与轨迹解耦。
    */
   readonly spawnCentered?: boolean
-
   /** 击毁后掉落道具的概率（0 ~ 1） */
   readonly dropChance: number
   /** 是否 BOSS：多阶段、血条、清场例外等行为据此判断 */
   readonly isBoss: boolean
-
-  /**
-   * 开火装配（可选）：这架敌机有哪些发射器【同时】工作。
-   * 这是「角色能力组合」思路的体现 —— 一个单位"能做什么"由一组可插拔的能力
-   * 模块（发射器）拼出来，而非写死在单位的类里；与玩家侧 ShipConfig.emitters 完全同形。
-   *
-   * 与 ShipConfig.emitters **同形**：都是【工厂闭包数组】
-   * （每项是 `() => new XxxEmitter(...)`）。实体在装配时调用这些闭包生成真正
-   * 的发射器实例（见 Enemy.init）：
-   *   - 同型敌机不共享冷却（每架各自 new）；
-   *   - 同一 prefab 被池复用、被改派给不同 cfg 时，靠"配置引用相等"复用或重建（见 Enemy.init）。
-   * 省略 = 该敌机不开火（如普通机）。
-   *
-   * 【为什么用箭头函数闭包，而不是把 `new XxxEmitter` 直接写在配置里】
-   *   闭包把 `new` 延迟到实体生成的那一刻才执行；配置模块加载时只创建函数、
-   *   不创建发射器实例。这样既消灭了"只为被 clone 而存在的死模板实例"，
-   *   又不必引入 `EmitterSpec` 之类的中心分发文件——"哪种发射器"直接写死在
-   *   闭包里的 `new` 上，实体侧只需 `cfg.emitters.map((make) => make())` 一句。
-   */
-  readonly emitters?: readonly (() => Emitter)[]
   /**
    * 资源路径：与数值写在同一个文件里（"一种敌机一套数据"）。
    *
@@ -147,7 +138,6 @@ export interface EnemyConfig {
    *    由 EnemyRegistry 在启动阶段按 id 加载并缓存，之后全局同步取用（参考 ships 的 ShipRegistry）。
    */
   readonly assetPaths: EnemyAssetPath
-
   /**
    * 节点缩放：单一共享 prefab 的"体型"由这一项驱动（替代原 3 个 prefab 各自的 _lscale）。
    *
@@ -158,7 +148,6 @@ export interface EnemyConfig {
    *    详见下字段说明与记忆中的"碰撞盒与图片错位"问题。
    */
   readonly scale: number
-
   /**
    * 命中判定系数（可选，省略 = 1）：碰撞盒尺寸 = 节点 contentSize × hitScale。
    *

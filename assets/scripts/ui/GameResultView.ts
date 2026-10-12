@@ -1,8 +1,7 @@
-import { _decorator, Button, Component, Enum, Label, Node } from 'cc'
-import { eventBus } from '../core/EventBus'
+import { _decorator, Button, Component, Label } from 'cc'
 import { playerData } from '../data/PlayerData'
 import { gameManager } from '../managers/GameManager'
-import { StateChangePayload, GameResult, GameState } from '../data/GameState'
+import { GameResult } from '../data/GameState'
 import { validateRequiredProps } from '../core/utils/validate'
 const { ccclass, property } = _decorator
 

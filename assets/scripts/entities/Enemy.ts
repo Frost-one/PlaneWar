@@ -303,7 +303,9 @@ export class Enemy extends Component {
     if (otherCollider.group === PHYSICS_GROUP.PLAYER_BULLET) {
       const bulletNode = otherCollider.getComponent(Bullet)
       if (bulletNode) {
-        this.takeDamage(bulletNode.getDamage())
+        // 用子弹的世界坐标作为命中点（火花出现在真正接触处，而非敌机中心）
+        const bp = bulletNode.node.worldPosition
+        this.takeDamage(bulletNode.getDamage(), { x: bp.x, y: bp.y })
       }
       return
     }
@@ -325,9 +327,12 @@ export class Enemy extends Component {
     }
   }
 
-  // 敌机受到伤害
-  takeDamage(d: number) {
+  // 敌机受到伤害（hitPoint 为命中点世界坐标；不传则回退到敌机中心，兼容 BeamEmitter 调用）
+  takeDamage(d: number, hitPoint?: { x: number; y: number }) {
     if (this.hp <= 0) return
+    // 命中火花：无论是否击杀都先在命中点播一下（节点此刻仍有效，可直接取世界坐标）
+    const pt = hitPoint ?? { x: this.node.worldPosition.x, y: this.node.worldPosition.y }
+    eventBus.emit('enemy_hit', { enemyNode: this.node, hitPoint: pt })
     this.hp -= d
     if (this.hp <= 0) {
       eventBus.emit('enemy_die', {

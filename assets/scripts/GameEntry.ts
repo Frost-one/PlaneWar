@@ -1,4 +1,4 @@
-import { _decorator, Component, Node, PhysicsSystem2D } from 'cc'
+import { _decorator, Component, PhysicsSystem2D } from 'cc'
 import { gameManager } from './managers/GameManager'
 import { GameState } from './data/GameState'
 import { loadShipAssets } from './data/ships/ShipRegistry'
@@ -40,6 +40,7 @@ export class GameEntry extends Component {
 
     // （后续可在这里初始化音频、场景等管理器）
     gameManager.initListeners()
+
     gameManager.setGameState(GameState.MENU)
     console.log('[GameEntry] 启动完成，当前状态:', gameManager.getGameState())
   }

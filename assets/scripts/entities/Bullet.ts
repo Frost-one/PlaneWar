@@ -9,7 +9,8 @@ import {
 } from 'cc'
 import { GameConfig } from '../data/config/GameConfig'
 import { eventBus } from '../core/EventBus'
-import { StateChangePayload, GameState } from '../data/GameState'
+import { GameState } from '../data/GameState'
+import type { StateChangePayload } from '../core/GameEvent'
 // 仅用于类型标注，编译后不产生真实 import，避免与 BulletManager 形成循环依赖
 import type { BulletManager } from '../managers/BulletManager'
 import type { Prefab } from 'cc'
